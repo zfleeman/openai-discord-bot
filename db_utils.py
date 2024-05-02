@@ -4,7 +4,7 @@ from datetime import datetime
 
 
 # config area
-default_text_model = "gpt-4-turbo"
+default_text_model = "gpt-3.5-turbo"
 sqlite_file_name = "database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
 

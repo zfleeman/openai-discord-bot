@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel, create_engine
 from openai import OpenAI
+from db_utils import Assistant, Thread
 
 client = OpenAI()
 

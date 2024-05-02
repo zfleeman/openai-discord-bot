@@ -1,7 +1,7 @@
 import ffmpeg
 import os
 import discord
-from discord import FFmpegOpusAudio
+from discord import FFmpegOpusAudio, Embed
 from discord.ext import commands
 from openai import OpenAI
 from pathlib import Path
@@ -90,6 +90,20 @@ async def ttsleave(ctx):
     if ctx.voice_client:
         await ctx.guild.voice_client.disconnect()
 
+@bot.command()
+async def image(ctx, arg1: str, arg2: str = "dall-e-2"):
+
+    image_response = client.images.generate(prompt=arg1, model=arg2)
+
+    url = image_response.data[0].url
+    revised_prompt = image_response.data[0].revised_prompt
+
+    embed = Embed(title="B4NG AI Image Response", description=f"User Input:\n```{arg1}```")
+    embed.set_image(url=url)
+    embed.set_footer(text=f"Revised Prompt:\n{revised_prompt}")
+
+    await ctx.send(embed=embed)
+
 
 def new_response(assistant: Assistant, game: str, prompt: str = "", guild_id: str = ""):
 
@@ -130,6 +144,8 @@ def generate_speech(tts: str, file_path: str = "", voice: str = "onyx") -> str:
 
 def gs_intro_song(guild_id: str, game: str, assistant_name="gs_host"):
 
+    game = f"{game}_theme"
+
     assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
 
     # check if this is a new assistant
@@ -140,8 +156,8 @@ def gs_intro_song(guild_id: str, game: str, assistant_name="gs_host"):
         )
 
     game_prompts = {
-        "rather": "Create a sarcastic, one-sentence intro to a game show that asks hypothetical questions to your stupid friends. The game show's title is made up each time. It is unlike any of the other titles that you have come up with. The game show's title has to do with the fact that this is a hypotetical question game show.",
-        "quiz": "Create a sarcastic, one-sentence intro to a game show that asks simple to complex quiz questions. The game show's title is made up each time. It is unlike any of the other titles that you have come up with. The game show's title has to do with the fact that this is a Trivial Pursuit-style quiz question show.",
+        "rather_theme": "Create a sarcastic, one-sentence intro to a game show that asks hypothetical questions to your stupid friends. The game show's title is made up each time. It is unlike any of the other titles that you have come up with. The game show's title has to do with the fact that this is a hypotetical question game show.",
+        "quiz_theme": "Create a sarcastic, one-sentence intro to a game show that asks simple to complex quiz questions. The game show's title is made up each time. It is unlike any of the other titles that you have come up with. The game show's title has to do with the fact that this is a Trivial Pursuit-style quiz question show.",
     }
 
     # openai api work
@@ -220,11 +236,17 @@ def quiz(guild_id: str, assistant_name: str, qa: str = ""):
     if qa == "question":
         assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
         assistant_instructions = "You are an assistant that asks Trivial Pursuit-style quiz questions that could stump the averge Jeopardy contestant. Make sure the question is at most two sentences long. Make it a tricky quesiton."
+        assistant = client.beta.assistants.update(
+            assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
+        )
         prompt = "Ask me a new question."
     elif qa == "answer":
         assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
         assistant_instructions = (
-            "You are an assistant that answers Trivial Pursuit-style quiz questions in two sentences or less. Do not repeat the question in your answer."
+            "You are an assistant that answers Trivial Pursuit-style quiz questions in two sentences or less. Do not repeat the question in your answer. Make the answer as brief as possible. Include a fun fact about the answer."
+        )
+        assistant = client.beta.assistants.update(
+            assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
         )
         prompt = "Answer the question that was just asked."
     else:
