@@ -46,7 +46,7 @@ async def rather(ctx, arg1: str = "normal"):
 
     arg1 = arg1.lower()
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    tts, path = would_you_rather(guild_id=ctx.guild.id, assistant_name=arg1)
+    tts, path = would_you_rather(guild_id=ctx.guild.id, topic=arg1)
     source = FFmpegOpusAudio(path)
     player = voice.play(source)
     await ctx.send(tts)
@@ -60,7 +60,7 @@ async def quiz(ctx, arg1: str = ""):
     """
     arg1 = arg1.lower()
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    tts, path = quiz(guild_id=ctx.guild.id, assistant_name="quiz", qa=arg1)
+    tts, path = quiz(guild_id=ctx.guild.id, qa=arg1)
     if not path:
         await ctx.send(tts)
     source = FFmpegOpusAudio(path)
@@ -72,7 +72,7 @@ async def quiz(ctx, arg1: str = ""):
 async def say(ctx, arg1: str = ""):
     """
     say whatever somebody types
-    :param arg1: 'question' or 'answer'
+    :param arg1: string of quoted text to speak
     """
     if not arg1:
         await ctx.send("You need to type something in quotes after the command.")
@@ -90,6 +90,7 @@ async def ttsleave(ctx):
     if ctx.voice_client:
         await ctx.guild.voice_client.disconnect()
 
+
 @bot.command()
 async def image(ctx, arg1: str, arg2: str = "dall-e-2"):
 
@@ -105,9 +106,9 @@ async def image(ctx, arg1: str, arg2: str = "dall-e-2"):
     await ctx.send(embed=embed)
 
 
-def new_response(assistant: Assistant, game: str, prompt: str = "", guild_id: str = ""):
+def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild_id: str = ""):
 
-    thread = get_thread(guild_id=guild_id, game=game, client=client, assistant_id=assistant.id)
+    thread = get_thread(guild_id=guild_id, name=thread_name, client=client, assistant_id=assistant.id)
 
     # add a message to the thread
     client.beta.threads.messages.create(
@@ -142,9 +143,9 @@ def generate_speech(tts: str, file_path: str = "", voice: str = "onyx") -> str:
     return file_path
 
 
-def gs_intro_song(guild_id: str, game: str, assistant_name="gs_host"):
+def gs_intro_song(guild_id: str, name: str, assistant_name="gs_host"):
 
-    game = f"{game}_theme"
+    name = f"{name}_theme"
 
     assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
 
@@ -155,14 +156,14 @@ def gs_intro_song(guild_id: str, game: str, assistant_name="gs_host"):
             assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
         )
 
-    game_prompts = {
+    prompts = {
         "rather_theme": "Create a sarcastic, one-sentence intro to a game show that asks hypothetical questions to your stupid friends. The game show's title is made up each time. It is unlike any of the other titles that you have come up with. The game show's title has to do with the fact that this is a hypotetical question game show.",
         "quiz_theme": "Create a sarcastic, one-sentence intro to a game show that asks simple to complex quiz questions. The game show's title is made up each time. It is unlike any of the other titles that you have come up with. The game show's title has to do with the fact that this is a Trivial Pursuit-style quiz question show.",
     }
 
     # openai api work
     ## generate the show intro text
-    response = new_response(assistant=assistant, prompt=game_prompts[game], guild_id=guild_id, game=game)
+    response = new_response(assistant=assistant, prompt=prompts[name], guild_id=guild_id, thread_name=name)
 
     ## generate a speech wav
     file_path = Path(".").resolve() / f"{response.id}.wav"  # store each file in a session dir
@@ -188,26 +189,27 @@ def gs_intro_song(guild_id: str, game: str, assistant_name="gs_host"):
     return tts, ouput_file
 
 
-def would_you_rather(guild_id: str, assistant_name: str):
+def would_you_rather(guild_id: str, topic: str):
 
-    games = {
-        "sexy": "You are an assistant that provides sexual, adult-themed hypothetical questions in the format of 'would you rather' that would spur interesting conversation in an online chat room.",
+    assistant_name = f"rather_{topic}"
+
+    instructions = {
+        "sexy": "You are an assistant that provides sexually-suggestive, adult-themed hypothetical questions in the format of 'would you rather' that would spur interesting conversation in an online chat room.",
         "games": "You are an assistant that provides hypothetical questions in the form of 'would you rather' that involves video games from the late 1990s or early 2000s. Be specific about the game's title.",
-        "fitness": "You are an assistant that provides hypothetical questions in the form of 'would you rather' that involve a physical feat or endurance test ofsome kind. This hypothetical should spur interesting conversation in an online chat room.",
-        "partners": "You are an assistant that provides hypothetical questions in the form of 'would you rather' that are geared towards people in committed relationships. These can be sexy questions or serious questions. This hypothetical should spur interesting conversation in an online chat room.",
+        "fitness": "You are an assistant that provides hypothetical questions in the form of 'would you rather' that involve a physical feat or endurance test of some kind. This hypothetical should spur interesting conversation in an online chat room. Only ask the question.",
         "normal": "You are an assistant that provides hypothetical questions in the form of 'would you rather' that would spur interesting conversation in an online chat room.",
     }
 
-    if assistant_name not in games.keys():
-        file_path = f"error_{assistant_name}_.wav"
-        tts = f"I do not know how to ask {assistant_name} hypothetical questions."
+    if topic not in instructions.keys():
+        file_path = f"error_{topic}_.wav"
+        tts = f"I do not know how to ask {topic} hypothetical questions."
         return tts, generate_speech(tts=tts, file_path=file_path)
 
     assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
 
     # check if this is a new assistant
     if not assistant.instructions:
-        assistant_instructions = games[assistant_name]
+        assistant_instructions = instructions[topic]
         assistant = client.beta.assistants.update(
             assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
         )
@@ -215,15 +217,15 @@ def would_you_rather(guild_id: str, assistant_name: str):
     # TODO: replace with a config
     # new_hypothetical_prompt = "Ask me a new hypothetical question. Stick to your assistant instructions."
     new_hypothetical_prompt = """
-        Ask me a new hypothetical question. 
-        Make sure it is completely unlike every other hypothetical question in this thread. 
-        Go in a different direction from the other questions. 
-        Surprise me. 
+        Ask me a new hypothetical question. The question should relate to your assistant instructions.
+        Make sure it is completely unlike every other hypothetical question in this thread.
         The question should start an interesting conversation in a chat room.
     """
 
     # TODO: should new_response just go ahead and do speech? this is redundant for each game
-    response = new_response(assistant=assistant, game="rather", prompt=new_hypothetical_prompt, guild_id=guild_id)
+    response = new_response(
+        assistant=assistant, thread_name="rather", prompt=new_hypothetical_prompt, guild_id=guild_id
+    )
     file_path = Path(".").resolve() / f"{response.id}.wav"  # store each file in a session dir
     tts = response.content[0].text.value
     file_path = generate_speech(tts=tts, file_path=file_path)
@@ -231,24 +233,18 @@ def would_you_rather(guild_id: str, assistant_name: str):
     return tts, file_path
 
 
-def quiz(guild_id: str, assistant_name: str, qa: str = ""):
+def quiz(guild_id: str, qa: str = ""):
+
+    assistant_name = f"quiz_{qa}"
 
     if qa == "question":
         assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
         assistant_instructions = "You are an assistant that asks Trivial Pursuit-style quiz questions that could stump the averge Jeopardy contestant. Make sure the question is at most two sentences long. Make it a tricky quesiton."
-        assistant = client.beta.assistants.update(
-            assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
-        )
         prompt = "Ask me a new question."
     elif qa == "answer":
         assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
-        assistant_instructions = (
-            "You are an assistant that answers Trivial Pursuit-style quiz questions in two sentences or less. Do not repeat the question in your answer. Make the answer as brief as possible. Include a fun fact about the answer."
-        )
-        assistant = client.beta.assistants.update(
-            assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
-        )
-        prompt = "Answer the question that was just asked."
+        assistant_instructions = "You are an assistant that answers questions as briefly as possible. Do not repeat the context of the question. Use one word or two to structure your answer if possible. After you provide the answer answer, provide a fun fact about the answer."
+        prompt = "Answer the question that was just asked with one word or phrase. "
     else:
         return "That is not a valid input.", False
 
@@ -258,7 +254,7 @@ def quiz(guild_id: str, assistant_name: str, qa: str = ""):
             assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
         )
 
-    response = new_response(assistant=assistant, game="quiz", prompt=prompt, guild_id=guild_id)
+    response = new_response(assistant=assistant, thread_name="quiz", prompt=prompt, guild_id=guild_id)
     file_path = Path(".").resolve() / f"{response.id}.wav"  # store each file in a session dir
     tts = response.content[0].text.value
     file_path = generate_speech(tts=tts, file_path=file_path)

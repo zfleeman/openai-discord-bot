@@ -15,31 +15,29 @@ def get_session():
     return Session(engine)
 
 
+class Thread(SQLModel, table=True):
+    id: str = Field(default=None, primary_key=True)
+    guild_id: str
+    name: str
+    created_at: datetime = datetime.now()
+    assistants: list["Assistant"] = Relationship(back_populates="thread")
+
+
 class Assistant(SQLModel, table=True):
     id: str = Field(default=None, primary_key=True)
     guild_id: str
     name: str
     created_at: datetime = datetime.now()
+    thread_id: str | None = Field(default=None, foreign_key="thread.id")
+    thread: Thread | None = Relationship(back_populates="assistants")
 
 
-class Thread(SQLModel, table=True):
-    id: str = Field(default=None, primary_key=True)
-    guild_id: str
-    game: str
-    assistant_id: str = Field(default=None, foreign_key="assistant.id")
-    created_at: datetime = datetime.now()
-
-
-def get_thread(guild_id: str, game: str, assistant_id: str, client: OpenAI = OpenAI()):
+def get_thread(guild_id: str, name: str, assistant_id: str, client: OpenAI = OpenAI()):
     with get_session() as session:
-        statement = (
-            select(Thread)
-            .where(Thread.game == game)
-            .where(Thread.guild_id == guild_id)
-            .where(Thread.assistant_id == assistant_id)
-        )
+        statement = select(Thread).where(Thread.name == name).where(Thread.guild_id == guild_id)
         results = session.exec(statement)
         thread_record = results.first()
+        assistant_record = get_assistant_record_by_id(assistant_id=assistant_id)
 
         if thread_record:
             thread = client.beta.threads.retrieve(thread_id=thread_record.id)
@@ -47,9 +45,10 @@ def get_thread(guild_id: str, game: str, assistant_id: str, client: OpenAI = Ope
             thread = client.beta.threads.create()
 
             # new record
-            thread_entry = Thread(id=thread.id, guild_id=guild_id, game=game, assistant_id=assistant_id)
-            session = get_session()
+            thread_entry = Thread(id=thread.id, guild_id=guild_id, name=name)
+            assistant_record.thread_id = thread.id
             session.add(thread_entry)
+            session.add(assistant_record)
             session.commit()
 
         return thread
@@ -82,6 +81,13 @@ def get_assistant_by_name(guild_id: str, name: str, client: OpenAI = OpenAI()):
         return assistant
 
 
+def get_assistant_record_by_id(assistant_id: str, client: OpenAI = OpenAI()):
+    with get_session() as session:
+        statement = select(Assistant).where(Assistant.id == assistant_id)
+        results = session.exec(statement)
+        return results.first()
+
+
 def create_assistant_w_params(
     instructions: str, guild_id: str, name: str, model: str = default_text_model, client: OpenAI = OpenAI()
 ):
@@ -92,3 +98,10 @@ def create_assistant_w_params(
     session.commit()
 
     return assistant
+
+
+if __name__ == "__main__":
+    sqlite_file_name = "database.db"
+    sqlite_url = f"sqlite:///{sqlite_file_name}"
+    engine = create_engine(sqlite_url, echo=True)
+    SQLModel.metadata.create_all(engine)
