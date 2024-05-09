@@ -10,6 +10,8 @@ import time
 from openai import OpenAI
 from openai.types.beta.assistant import Assistant
 from db_utils import get_assistant_by_name, get_thread
+from pathlib import Path
+import urllib.request
 
 # OpenAI Client
 client = OpenAI()
@@ -69,18 +71,19 @@ async def quiz(ctx, arg1: str = ""):
 
 
 @bot.command()
-async def say(ctx, arg1: str = ""):
+async def say(ctx, arg1: str = "", arg2: str = "onyx"):
     """
     say whatever somebody types
     :param arg1: string of quoted text to speak
+    :param arg1: AI speaker to use
     """
     if not arg1:
         await ctx.send("You need to type something in quotes after the command.")
         return
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
-    file_path = f"{ctx.guild.id}_{ts}_say.wav"
+    file_name = f"{ts}.wav"
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    path = generate_speech(tts=arg1, file_path=file_path)
+    path = generate_speech(guild_id=ctx.guild.id, compartment="say", file_name=file_name, tts=arg1, voice=arg2)
     source = FFmpegOpusAudio(path)
     player = voice.play(source)
 
@@ -95,15 +98,23 @@ async def ttsleave(ctx):
 async def image(ctx, arg1: str, arg2: str = "dall-e-2"):
 
     image_response = client.images.generate(prompt=arg1, model=arg2)
-
     url = image_response.data[0].url
+    file_name = f"image_{image_response.created}.png"
+    path = content_path(guild_id=ctx.guild.id, compartment="image", file_name=file_name)
+    with urllib.request.urlopen(url) as response:
+        image_data = response.read()
+        with open(path, "wb") as file:
+            file.write(image_data)
+
     revised_prompt = image_response.data[0].revised_prompt
-
+    file = discord.File(path, filename=file_name)
+    embed = discord.Embed()
     embed = Embed(title="B4NG AI Image Response", description=f"User Input:\n```{arg1}```")
-    embed.set_image(url=url)
-    embed.set_footer(text=f"Revised Prompt:\n{revised_prompt}")
+    embed.set_image(url=f"attachment://{file_name}")
+    if revised_prompt:
+        embed.set_footer(text=f"Revised Prompt:\n{revised_prompt}")
 
-    await ctx.send(embed=embed)
+    await ctx.send(file=file, embed=embed)
 
 
 def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild_id: str = ""):
@@ -131,14 +142,19 @@ def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild
     return response
 
 
-def generate_speech(tts: str, file_path: str = "", voice: str = "onyx") -> str:
+def content_path(guild_id: str, compartment: str, file_name: str, ts: str = datetime.now().strftime("%Y-%m-%d - %A")):
+    dir_path = Path(f"generated_content/guild_{guild_id}/{ts}/{compartment}")
+    dir_path.mkdir(parents=True, exist_ok=True)
+    return dir_path / file_name
 
-    if file_path not in os.listdir():
 
-        with client.audio.speech.with_streaming_response.create(
-            model="tts-1", voice=voice, input=tts, response_format="wav"
-        ) as speech:
-            speech.stream_to_file(file_path)
+def generate_speech(guild_id: str, compartment: str, file_name: str, tts: str, voice: str = "onyx") -> str:
+
+    with client.audio.speech.with_streaming_response.create(
+        model="tts-1", voice=voice, input=tts, response_format="wav"
+    ) as speech:
+        file_path = content_path(guild_id=guild_id, compartment=compartment, file_name=file_name)
+        speech.stream_to_file(file_path)
 
     return file_path
 
@@ -166,9 +182,10 @@ def gs_intro_song(guild_id: str, name: str, assistant_name="gs_host"):
     response = new_response(assistant=assistant, prompt=prompts[name], guild_id=guild_id, thread_name=name)
 
     ## generate a speech wav
-    file_path = Path(".").resolve() / f"{response.id}.wav"  # store each file in a session dir
     tts = response.content[0].text.value
-    file_path = generate_speech(tts=tts, file_path=file_path)
+    file_path = generate_speech(
+        guild_id=guild_id, compartment="theme", tts=tts, file_name=f"{name}_{response.id}.wav"
+    )
 
     # ffmpeg work to combine streams
     ## load both audio files
@@ -226,9 +243,8 @@ def would_you_rather(guild_id: str, topic: str):
     response = new_response(
         assistant=assistant, thread_name="rather", prompt=new_hypothetical_prompt, guild_id=guild_id
     )
-    file_path = Path(".").resolve() / f"{response.id}.wav"  # store each file in a session dir
     tts = response.content[0].text.value
-    file_path = generate_speech(tts=tts, file_path=file_path)
+    file_path = generate_speech(guild_id=guild_id, compartment="rather", tts=tts, file_name=f"{response.id}.wav")
 
     return tts, file_path
 
@@ -255,9 +271,8 @@ def quiz(guild_id: str, qa: str = ""):
         )
 
     response = new_response(assistant=assistant, thread_name="quiz", prompt=prompt, guild_id=guild_id)
-    file_path = Path(".").resolve() / f"{response.id}.wav"  # store each file in a session dir
     tts = response.content[0].text.value
-    file_path = generate_speech(tts=tts, file_path=file_path)
+    file_path = generate_speech(guild_id=guild_id, compartment="quiz", tts=tts, file_name=f"{qa}_{response.id}.wav")
 
     return tts, file_path
 
