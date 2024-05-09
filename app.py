@@ -183,9 +183,7 @@ def gs_intro_song(guild_id: str, name: str, assistant_name="gs_host"):
 
     ## generate a speech wav
     tts = response.content[0].text.value
-    file_path = generate_speech(
-        guild_id=guild_id, compartment="theme", tts=tts, file_name=f"{name}_{response.id}.wav"
-    )
+    file_path = generate_speech(guild_id=guild_id, compartment="theme", tts=tts, file_name=f"{name}_{response.id}.wav")
 
     # ffmpeg work to combine streams
     ## load both audio files
