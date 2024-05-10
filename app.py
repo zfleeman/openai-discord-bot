@@ -1,27 +1,30 @@
-import ffmpeg
 import os
-import discord
-from discord import FFmpegOpusAudio, Embed
-from discord.ext import commands
-from openai import OpenAI
+import time
 from pathlib import Path
 from datetime import datetime
-import time
+from urllib.request import urlopen
+
+import ffmpeg
+import discord
+from discord.ext.commands import Context, Bot
+from discord import FFmpegOpusAudio, Embed, Intents
 from openai import OpenAI
 from openai.types.beta.assistant import Assistant
+
 from db_utils import get_assistant_by_name, get_thread
+
 
 # OpenAI Client
 client = OpenAI()
 
 # Bot Client
-intents = discord.Intents.default()
+intents = Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = Bot(command_prefix="!", intents=intents)
 
 
 @bot.command()
-async def ttsjoin(ctx):
+async def ttsjoin(ctx: Context):
     if ctx.author.voice:
         voice = await ctx.author.voice.channel.connect()
     else:
@@ -29,16 +32,27 @@ async def ttsjoin(ctx):
 
 
 @bot.command()
-async def theme(ctx, game: str):
+async def ttsleave(ctx: Context):
+    if ctx.voice_client:
+        await ctx.guild.voice_client.disconnect()
+
+
+@bot.command()
+async def theme(ctx: Context, arg1: str):
+    """
+    Creates an intro theme song for a game
+    :param arg1: the game you want a theme song for
+    """
+
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    tts, path = gs_intro_song(ctx.guild.id, game)
+    tts, path = gs_intro_song(ctx.guild.id, arg1)
     source = FFmpegOpusAudio(path)
     player = voice.play(source)
     await ctx.send(tts)
 
 
 @bot.command()
-async def rather(ctx, arg1: str = "normal"):
+async def rather(ctx: Context, arg1: str = "normal"):
     """
     Play the 'would you rather' game
     :param arg1: The assistant/game's name
@@ -53,11 +67,12 @@ async def rather(ctx, arg1: str = "normal"):
 
 
 @bot.command()
-async def quiz(ctx, arg1: str = ""):
+async def quiz(ctx: Context, arg1: str = ""):
     """
     Play the 'quiz question' game
     :param arg1: 'question' or 'answer'
     """
+
     arg1 = arg1.lower()
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
     tts, path = quiz(guild_id=ctx.guild.id, qa=arg1)
@@ -69,41 +84,57 @@ async def quiz(ctx, arg1: str = ""):
 
 
 @bot.command()
-async def say(ctx, arg1: str = ""):
+async def say(ctx: Context, arg1: str = "", arg2: str = "onyx"):
     """
     say whatever somebody types
     :param arg1: string of quoted text to speak
+    :param arg2: AI speaker to use
     """
+
     if not arg1:
         await ctx.send("You need to type something in quotes after the command.")
         return
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
-    file_path = f"{ctx.guild.id}_{ts}_say.wav"
+    file_name = f"{ts}.wav"
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    path = generate_speech(tts=arg1, file_path=file_path)
+    path = generate_speech(guild_id=ctx.guild.id, compartment="say", file_name=file_name, tts=arg1, voice=arg2)
     source = FFmpegOpusAudio(path)
     player = voice.play(source)
 
 
 @bot.command()
-async def ttsleave(ctx):
-    if ctx.voice_client:
-        await ctx.guild.voice_client.disconnect()
+async def image(ctx: Context, arg1: str, arg2: str = "dall-e-2"):
+    """
+    Generate an image using
+    :param arg1: The prompt used for image generation
+    :param arg2: The model to use
+    """
 
-
-@bot.command()
-async def image(ctx, arg1: str, arg2: str = "dall-e-2"):
-
+    # create image and get relevant information
     image_response = client.images.generate(prompt=arg1, model=arg2)
-
     url = image_response.data[0].url
     revised_prompt = image_response.data[0].revised_prompt
 
-    embed = Embed(title="B4NG AI Image Response", description=f"User Input:\n```{arg1}```")
-    embed.set_image(url=url)
-    embed.set_footer(text=f"Revised Prompt:\n{revised_prompt}")
+    # create the output path
+    file_name = f"image_{image_response.created}.png"
+    path = content_path(guild_id=ctx.guild.id, compartment="image", file_name=file_name)
 
-    await ctx.send(embed=embed)
+    # download the image from OpenAI
+    with urlopen(url) as response:
+        image_data = response.read()
+        with open(path, "wb") as file:
+            file.write(image_data)
+
+    # create our embed object
+    embed = Embed(title="B4NG AI Image Response", description=f"User Input:\n```{arg1}```")  # config this
+    embed.set_image(url=f"attachment://{file_name}")
+    if revised_prompt:
+        embed.set_footer(text=f"Revised Prompt:\n{revised_prompt}")
+
+    # attach our file object
+    file_upload = discord.File(path, filename=file_name)
+
+    await ctx.send(file=file_upload, embed=embed)
 
 
 def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild_id: str = ""):
@@ -121,7 +152,7 @@ def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild
     run = client.beta.threads.runs.create_and_poll(thread_id=thread.id, assistant_id=assistant.id)
 
     while run.status != "completed":
-        time.sleep(0.5)
+        time.sleep(0.25)
 
     messages = client.beta.threads.messages.list(thread_id=thread.id)
 
@@ -131,14 +162,20 @@ def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild
     return response
 
 
-def generate_speech(tts: str, file_path: str = "", voice: str = "onyx") -> str:
+def content_path(guild_id: str, compartment: str, file_name: str):
+    ts = datetime.now().strftime("%Y-%m-%d - %A")  # config this
+    dir_path = Path(f"generated_content/guild_{guild_id}/{ts}/{compartment}")
+    dir_path.mkdir(parents=True, exist_ok=True)
+    return dir_path / file_name
 
-    if file_path not in os.listdir():
 
-        with client.audio.speech.with_streaming_response.create(
-            model="tts-1", voice=voice, input=tts, response_format="wav"
-        ) as speech:
-            speech.stream_to_file(file_path)
+def generate_speech(guild_id: str, compartment: str, file_name: str, tts: str, voice: str = "onyx") -> str:
+
+    with client.audio.speech.with_streaming_response.create(
+        model="tts-1", voice=voice, input=tts, response_format="wav"  # config this
+    ) as speech:
+        file_path = content_path(guild_id=guild_id, compartment=compartment, file_name=file_name)
+        speech.stream_to_file(file_path)
 
     return file_path
 
@@ -156,7 +193,7 @@ def gs_intro_song(guild_id: str, name: str, assistant_name="gs_host"):
             assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
         )
 
-    prompts = {
+    prompts = {  # config this
         "rather_theme": "Create a sarcastic, one-sentence intro to a game show that asks hypothetical questions to your stupid friends. The game show's title is made up each time. It is unlike any of the other titles that you have come up with. The game show's title has to do with the fact that this is a hypotetical question game show.",
         "quiz_theme": "Create a sarcastic, one-sentence intro to a game show that asks simple to complex quiz questions. The game show's title is made up each time. It is unlike any of the other titles that you have come up with. The game show's title has to do with the fact that this is a Trivial Pursuit-style quiz question show.",
     }
@@ -166,13 +203,12 @@ def gs_intro_song(guild_id: str, name: str, assistant_name="gs_host"):
     response = new_response(assistant=assistant, prompt=prompts[name], guild_id=guild_id, thread_name=name)
 
     ## generate a speech wav
-    file_path = Path(".").resolve() / f"{response.id}.wav"  # store each file in a session dir
     tts = response.content[0].text.value
-    file_path = generate_speech(tts=tts, file_path=file_path)
+    file_path = generate_speech(guild_id=guild_id, compartment="theme", tts=tts, file_name=f"{name}_{response.id}.wav")
 
     # ffmpeg work to combine streams
     ## load both audio files
-    theme_song = ffmpeg.input("gameshow.mp3").audio  # find more game show intros
+    theme_song = ffmpeg.input("gameshow.mp3").audio
     words = ffmpeg.input(file_path).audio
 
     ## adjust volumes
@@ -214,21 +250,18 @@ def would_you_rather(guild_id: str, topic: str):
             assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
         )
 
-    # TODO: replace with a config
-    # new_hypothetical_prompt = "Ask me a new hypothetical question. Stick to your assistant instructions."
     new_hypothetical_prompt = """
         Ask me a new hypothetical question. The question should relate to your assistant instructions.
         Make sure it is completely unlike every other hypothetical question in this thread.
         The question should start an interesting conversation in a chat room.
-    """
+    """  # config this
 
     # TODO: should new_response just go ahead and do speech? this is redundant for each game
     response = new_response(
         assistant=assistant, thread_name="rather", prompt=new_hypothetical_prompt, guild_id=guild_id
     )
-    file_path = Path(".").resolve() / f"{response.id}.wav"  # store each file in a session dir
     tts = response.content[0].text.value
-    file_path = generate_speech(tts=tts, file_path=file_path)
+    file_path = generate_speech(guild_id=guild_id, compartment="rather", tts=tts, file_name=f"{response.id}.wav")
 
     return tts, file_path
 
@@ -255,9 +288,8 @@ def quiz(guild_id: str, qa: str = ""):
         )
 
     response = new_response(assistant=assistant, thread_name="quiz", prompt=prompt, guild_id=guild_id)
-    file_path = Path(".").resolve() / f"{response.id}.wav"  # store each file in a session dir
     tts = response.content[0].text.value
-    file_path = generate_speech(tts=tts, file_path=file_path)
+    file_path = generate_speech(guild_id=guild_id, compartment="quiz", tts=tts, file_name=f"{qa}_{response.id}.wav")
 
     return tts, file_path
 
