@@ -1,10 +1,11 @@
-from sqlmodel import Field, SQLModel, create_engine, Session, select, Relationship
-from openai import OpenAI
 from datetime import datetime
+
+from openai import OpenAI
+from sqlmodel import Field, SQLModel, create_engine, Session, select, Relationship
 
 
 # config area
-default_text_model = "gpt-3.5-turbo"
+default_text_model = "gpt-3.5-turbo"  # config this
 sqlite_file_name = "database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
 
@@ -54,14 +55,6 @@ def get_thread(guild_id: str, name: str, assistant_id: str, client: OpenAI = Ope
         return thread
 
 
-def get_assitants(guild_id: str):
-    with get_session() as session:
-        statement = select(Assistant).where(Assistant.guild_id == guild_id)
-        results = session.exec(statement)
-        for assitant in results:
-            print(assitant.assitant_name)
-
-
 def get_assistant_by_name(guild_id: str, name: str, client: OpenAI = OpenAI()):
     with get_session() as session:
         statement = select(Assistant).where(Assistant.guild_id == guild_id).where(Assistant.name == name)
@@ -81,23 +74,11 @@ def get_assistant_by_name(guild_id: str, name: str, client: OpenAI = OpenAI()):
         return assistant
 
 
-def get_assistant_record_by_id(assistant_id: str, client: OpenAI = OpenAI()):
+def get_assistant_record_by_id(assistant_id: str):
     with get_session() as session:
         statement = select(Assistant).where(Assistant.id == assistant_id)
         results = session.exec(statement)
         return results.first()
-
-
-def create_assistant_w_params(
-    instructions: str, guild_id: str, name: str, model: str = default_text_model, client: OpenAI = OpenAI()
-):
-    assistant = client.beta.assistants.create(model=model, instructions=instructions, name=name)
-    assistant_entry = Assistant(id=assistant.id, guild_id=guild_id, name=assistant.name)
-    session = get_session()
-    session.add(assistant_entry)
-    session.commit()
-
-    return assistant
 
 
 if __name__ == "__main__":
