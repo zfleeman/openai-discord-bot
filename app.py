@@ -1,4 +1,5 @@
 import os
+import json
 import time
 from pathlib import Path
 from datetime import datetime
@@ -12,6 +13,7 @@ from openai import OpenAI
 from openai.types.beta.assistant import Assistant
 
 from db_utils import get_assistant_by_name, get_thread
+from configuration import get_config
 
 
 # OpenAI Client
@@ -21,6 +23,9 @@ client = OpenAI()
 intents = Intents.default()
 intents.message_content = True
 bot = Bot(command_prefix="!", intents=intents)
+
+# Configuration
+config = get_config()
 
 
 @bot.command()
@@ -103,7 +108,7 @@ async def say(ctx: Context, arg1: str = "", arg2: str = "onyx"):
 
 
 @bot.command()
-async def image(ctx: Context, arg1: str, arg2: str = "dall-e-2"):
+async def image(ctx: Context, arg1: str, arg2: str = config.get("OPENAI", "image_model")):
     """
     Generate an image using
     :param arg1: The prompt used for image generation
@@ -126,7 +131,7 @@ async def image(ctx: Context, arg1: str, arg2: str = "dall-e-2"):
             file.write(image_data)
 
     # create our embed object
-    embed = Embed(title="B4NG AI Image Response", description=f"User Input:\n```{arg1}```")  # config this
+    embed = Embed(title=config.get("DISCORD", "embed_title"), description=f"User Input:\n```{arg1}```")
     embed.set_image(url=f"attachment://{file_name}")
     if revised_prompt:
         embed.set_footer(text=f"Revised Prompt:\n{revised_prompt}")
@@ -163,7 +168,7 @@ def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild
 
 
 def content_path(guild_id: str, compartment: str, file_name: str):
-    ts = datetime.now().strftime("%Y-%m-%d - %A")  # config this
+    ts = datetime.now().strftime(config.get("GENERAL", "session_strftime"))
     dir_path = Path(f"generated_content/guild_{guild_id}/{ts}/{compartment}")
     dir_path.mkdir(parents=True, exist_ok=True)
     return dir_path / file_name
@@ -172,7 +177,10 @@ def content_path(guild_id: str, compartment: str, file_name: str):
 def generate_speech(guild_id: str, compartment: str, file_name: str, tts: str, voice: str = "onyx") -> str:
 
     with client.audio.speech.with_streaming_response.create(
-        model="tts-1", voice=voice, input=tts, response_format="wav"  # config this
+        model=config.get("OPENAI", "speech_model"),
+        voice=voice,
+        input=tts,
+        response_format=config.get("OPENAI", "speech_file_format"),
     ) as speech:
         file_path = content_path(guild_id=guild_id, compartment=compartment, file_name=file_name)
         speech.stream_to_file(file_path)
@@ -193,10 +201,7 @@ def gs_intro_song(guild_id: str, name: str, assistant_name="gs_host"):
             assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
         )
 
-    prompts = {  # config this
-        "rather_theme": "Create a sarcastic, one-sentence intro to a game show that asks hypothetical questions to your stupid friends. The game show's title is made up each time. It is unlike any of the other titles that you have come up with. The game show's title has to do with the fact that this is a hypotetical question game show.",
-        "quiz_theme": "Create a sarcastic, one-sentence intro to a game show that asks simple to complex quiz questions. The game show's title is made up each time. It is unlike any of the other titles that you have come up with. The game show's title has to do with the fact that this is a Trivial Pursuit-style quiz question show.",
-    }
+    prompts = json.loads(config.get("PROMPTS", "theme_song_dict"))
 
     # openai api work
     ## generate the show intro text
@@ -250,11 +255,7 @@ def would_you_rather(guild_id: str, topic: str):
             assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
         )
 
-    new_hypothetical_prompt = """
-        Ask me a new hypothetical question. The question should relate to your assistant instructions.
-        Make sure it is completely unlike every other hypothetical question in this thread.
-        The question should start an interesting conversation in a chat room.
-    """  # config this
+    new_hypothetical_prompt = config.get("PROMPTS", "new_hypothetical")
 
     # TODO: should new_response just go ahead and do speech? this is redundant for each game
     response = new_response(
