@@ -48,7 +48,7 @@ def get_thread(guild_id: str, name: str, assistant_id: str, client: OpenAI = Ope
             thread_entry = Thread(id=thread.id, guild_id=guild_id, name=name)
             session.add(thread_entry)
             session.commit()
-    
+
         if not assistant_record.thread_id:
             assistant_record.thread_id = thread.id
             session.add(assistant_record)
