@@ -12,6 +12,7 @@ from openai import OpenAI
 from openai.types.beta.assistant import Assistant
 
 from db_utils import get_assistant_by_name, get_thread
+from configuration import get_config
 
 
 # OpenAI Client
@@ -103,12 +104,17 @@ async def say(ctx: Context, arg1: str = "", arg2: str = "onyx"):
 
 
 @bot.command()
-async def image(ctx: Context, arg1: str, arg2: str = "dall-e-2"):
+async def image(ctx: Context, arg1: str, arg2: str = ""):
     """
     Generate an image using
     :param arg1: The prompt used for image generation
     :param arg2: The model to use
     """
+
+    # Configuration
+    if not arg2:
+        config = get_config()
+        arg2 = config.get("OPENAI", "image_model", fallback="dall-e-2")
 
     # create image and get relevant information
     image_response = client.images.generate(prompt=arg1, model=arg2)
@@ -126,7 +132,10 @@ async def image(ctx: Context, arg1: str, arg2: str = "dall-e-2"):
             file.write(image_data)
 
     # create our embed object
-    embed = Embed(title="B4NG AI Image Response", description=f"User Input:\n```{arg1}```")  # config this
+    embed = Embed(
+        title=config.get("DISCORD", "embed_title", fallback="B4NG AI Image Response"),
+        description=f"User Input:\n```{arg1}```",
+    )
     embed.set_image(url=f"attachment://{file_name}")
     if revised_prompt:
         embed.set_footer(text=f"Revised Prompt:\n{revised_prompt}")
@@ -163,16 +172,20 @@ def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild
 
 
 def content_path(guild_id: str, compartment: str, file_name: str):
-    ts = datetime.now().strftime("%Y-%m-%d - %A")  # config this
+    config = get_config()
+    ts = datetime.now().strftime(config.get("GENERAL", "session_strftime", fallback="dall-e-2"))
     dir_path = Path(f"generated_content/guild_{guild_id}/{ts}/{compartment}")
     dir_path.mkdir(parents=True, exist_ok=True)
     return dir_path / file_name
 
 
 def generate_speech(guild_id: str, compartment: str, file_name: str, tts: str, voice: str = "onyx") -> str:
-
+    config = get_config()
     with client.audio.speech.with_streaming_response.create(
-        model="tts-1", voice=voice, input=tts, response_format="wav"  # config this
+        model=config.get("OPENAI", "speech_model", fallback="tts-1"),
+        voice=voice,
+        input=tts,
+        response_format=config.get("OPENAI", "speech_file_format", fallback="wav"),
     ) as speech:
         file_path = content_path(guild_id=guild_id, compartment=compartment, file_name=file_name)
         speech.stream_to_file(file_path)
@@ -180,27 +193,23 @@ def generate_speech(guild_id: str, compartment: str, file_name: str, tts: str, v
     return file_path
 
 
-def gs_intro_song(guild_id: str, name: str, assistant_name="gs_host"):
-
+def gs_intro_song(guild_id: str, name: str):
+    config = get_config()
     name = f"{name}_theme"
-
-    assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
+    assistant = get_assistant_by_name(guild_id=guild_id, name="gs_host", client=client)
 
     # check if this is a new assistant
     if not assistant.instructions:
-        assistant_instructions = "You are an assistant that has the personality of a 1970s game show host that is inebriated and sassy. Be as irreverant and mean as possible."
+        assistant_instructions = config.get("PROMPTS", "gs_host")
         assistant = client.beta.assistants.update(
-            assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
+            assistant_id=assistant.id, instructions=assistant_instructions, name="gs_host"
         )
 
-    prompts = {  # config this
-        "rather_theme": "Create a sarcastic, one-sentence intro to a game show that asks hypothetical questions to your stupid friends. The game show's title is made up each time. It is unlike any of the other titles that you have come up with. The game show's title has to do with the fact that this is a hypotetical question game show.",
-        "quiz_theme": "Create a sarcastic, one-sentence intro to a game show that asks simple to complex quiz questions. The game show's title is made up each time. It is unlike any of the other titles that you have come up with. The game show's title has to do with the fact that this is a Trivial Pursuit-style quiz question show.",
-    }
+    prompt = config.get("PROMPTS", name)
 
     # openai api work
     ## generate the show intro text
-    response = new_response(assistant=assistant, prompt=prompts[name], guild_id=guild_id, thread_name=name)
+    response = new_response(assistant=assistant, prompt=prompt, guild_id=guild_id, thread_name=name)
 
     ## generate a speech wav
     tts = response.content[0].text.value
@@ -226,39 +235,22 @@ def gs_intro_song(guild_id: str, name: str, assistant_name="gs_host"):
 
 
 def would_you_rather(guild_id: str, topic: str):
-
+    config = get_config()
     assistant_name = f"rather_{topic}"
-
-    instructions = {
-        "sexy": "You are an assistant that provides sexually-suggestive, adult-themed hypothetical questions in the format of 'would you rather' that would spur interesting conversation in an online chat room.",
-        "games": "You are an assistant that provides hypothetical questions in the form of 'would you rather' that involves video games from the late 1990s or early 2000s. Be specific about the game's title.",
-        "fitness": "You are an assistant that provides hypothetical questions in the form of 'would you rather' that involve a physical feat or endurance test of some kind. This hypothetical should spur interesting conversation in an online chat room. Only ask the question.",
-        "normal": "You are an assistant that provides hypothetical questions in the form of 'would you rather' that would spur interesting conversation in an online chat room.",
-    }
-
-    if topic not in instructions.keys():
-        file_path = f"error_{topic}_.wav"
-        tts = f"I do not know how to ask {topic} hypothetical questions."
-        return tts, generate_speech(tts=tts, file_path=file_path)
-
     assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
 
     # check if this is a new assistant
     if not assistant.instructions:
-        assistant_instructions = instructions[topic]
+        prompt = config.get("PROMPTS", assistant_name)
+        assistant_instructions = prompt
         assistant = client.beta.assistants.update(
             assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
         )
 
-    new_hypothetical_prompt = """
-        Ask me a new hypothetical question. The question should relate to your assistant instructions.
-        Make sure it is completely unlike every other hypothetical question in this thread.
-        The question should start an interesting conversation in a chat room.
-    """  # config this
+    new_hypothetical_prompt = config.get("PROMPTS", "new_hypothetical")
 
-    # TODO: should new_response just go ahead and do speech? this is redundant for each game
     response = new_response(
-        assistant=assistant, thread_name="rather", prompt=new_hypothetical_prompt, guild_id=guild_id
+        assistant=assistant, thread_name=assistant_name, prompt=new_hypothetical_prompt, guild_id=guild_id
     )
     tts = response.content[0].text.value
     file_path = generate_speech(guild_id=guild_id, compartment="rather", tts=tts, file_name=f"{response.id}.wav")
@@ -267,16 +259,16 @@ def would_you_rather(guild_id: str, topic: str):
 
 
 def quiz(guild_id: str, qa: str = ""):
-
+    config = get_config()
     assistant_name = f"quiz_{qa}"
 
     if qa == "question":
         assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
-        assistant_instructions = "You are an assistant that asks Trivial Pursuit-style quiz questions that could stump the averge Jeopardy contestant. Make sure the question is at most two sentences long. Make it a tricky quesiton."
+        assistant_instructions = config.get("PROMPTS", assistant_name)
         prompt = "Ask me a new question."
     elif qa == "answer":
         assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
-        assistant_instructions = "You are an assistant that answers questions as briefly as possible. Do not repeat the context of the question. Use one word or two to structure your answer if possible. After you provide the answer answer, provide a fun fact about the answer."
+        assistant_instructions = config.get("PROMPTS", assistant_name)
         prompt = "Answer the question that was just asked with one word or phrase. "
     else:
         return "That is not a valid input.", False

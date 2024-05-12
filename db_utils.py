@@ -3,9 +3,9 @@ from datetime import datetime
 from openai import OpenAI
 from sqlmodel import Field, SQLModel, create_engine, Session, select, Relationship
 
+from configuration import get_config
 
-# config area
-default_text_model = "gpt-3.5-turbo"  # config this
+
 sqlite_file_name = "database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
 
@@ -44,11 +44,13 @@ def get_thread(guild_id: str, name: str, assistant_id: str, client: OpenAI = Ope
             thread = client.beta.threads.retrieve(thread_id=thread_record.id)
         else:
             thread = client.beta.threads.create()
-
             # new record
             thread_entry = Thread(id=thread.id, guild_id=guild_id, name=name)
-            assistant_record.thread_id = thread.id
             session.add(thread_entry)
+            session.commit()
+
+        if not assistant_record.thread_id:
+            assistant_record.thread_id = thread.id
             session.add(assistant_record)
             session.commit()
 
@@ -64,8 +66,8 @@ def get_assistant_by_name(guild_id: str, name: str, client: OpenAI = OpenAI()):
         if assistant_record:
             assistant = client.beta.assistants.retrieve(assistant_id=assistant_record.id)
         else:
-            assistant = client.beta.assistants.create(model=default_text_model)
-
+            config = get_config()
+            assistant = client.beta.assistants.create(model=config.get("OPENAI", "chat_model"))
             assistant_entry = Assistant(id=assistant.id, guild_id=guild_id, name=name)
             session = get_session()
             session.add(assistant_entry)
