@@ -132,7 +132,10 @@ async def image(ctx: Context, arg1: str, arg2: str = ""):
             file.write(image_data)
 
     # create our embed object
-    embed = Embed(title=config.get("DISCORD", "embed_title"), description=f"User Input:\n```{arg1}```")
+    embed = Embed(
+        title=config.get("DISCORD", "embed_title", fallback="B4NG AI Image Response"),
+        description=f"User Input:\n```{arg1}```",
+    )
     embed.set_image(url=f"attachment://{file_name}")
     if revised_prompt:
         embed.set_footer(text=f"Revised Prompt:\n{revised_prompt}")
