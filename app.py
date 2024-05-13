@@ -111,9 +111,9 @@ async def image(ctx: Context, arg1: str, arg2: str = ""):
     :param arg2: The model to use
     """
 
-    # Configuration
+    config = get_config()
+
     if not arg2:
-        config = get_config()
         arg2 = config.get("OPENAI", "image_model", fallback="dall-e-2")
 
     # create image and get relevant information
