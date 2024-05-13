@@ -146,6 +146,28 @@ async def image(ctx: Context, arg1: str, arg2: str = ""):
     await ctx.send(file=file_upload, embed=embed)
 
 
+@bot.command()
+async def vision(ctx: Context):
+
+    config = get_config()
+
+    image_url = ctx.message.attachments[0].url
+
+    response = client.chat.completions.create(
+        model=config.get("OPENAI", "vision_model", fallback="gpt-4o"),
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What is in this image?"},
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ],
+            }
+        ],
+    )
+    await ctx.send(response.choices[0].message.content)
+
+
 def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild_id: str = ""):
 
     thread = get_thread(guild_id=guild_id, name=thread_name, client=client, assistant_id=assistant.id)
