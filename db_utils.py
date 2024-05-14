@@ -62,12 +62,19 @@ def get_assistant_by_name(guild_id: str, name: str, client: OpenAI = OpenAI()):
         statement = select(Assistant).where(Assistant.guild_id == guild_id).where(Assistant.name == name)
         results = session.exec(statement)
 
+        config = get_config()
+        assistant_model = config.get("OPENAI", "chat_model")
+
         assistant_record = results.first()
         if assistant_record:
             assistant = client.beta.assistants.retrieve(assistant_id=assistant_record.id)
+
+            if (old_model := assistant.model) != assistant_model:
+                assistant = client.beta.assistants.update(assistant_id=assistant.id, model=assistant_model)
+                print(f"Updated {assistant.id} from {old_model} to {assistant_model}.")
+
         else:
-            config = get_config()
-            assistant = client.beta.assistants.create(model=config.get("OPENAI", "chat_model"))
+            assistant = client.beta.assistants.create(model=assistant_model)
             assistant_entry = Assistant(id=assistant.id, guild_id=guild_id, name=name)
             session = get_session()
             session.add(assistant_entry)
