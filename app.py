@@ -2,7 +2,7 @@ import os
 import time
 from pathlib import Path
 from datetime import datetime
-from urllib.request import urlopen
+from urllib.request import urlopen, Request
 
 import ffmpeg
 import discord
@@ -172,6 +172,67 @@ async def vision(ctx: Context, arg1: str = ""):
         ],
     )
     await ctx.send(response.choices[0].message.content)
+
+
+@bot.command()
+async def edit(ctx: Context, arg1: str = ""):
+    """
+    Edit an image using the original image and its mask
+    :param arg1: A prompt to be used when describing the desired image edit
+    """
+
+    config = get_config()
+    images = [(ctx.message.attachments[0].url, "original"), (ctx.message.attachments[1].url, "mask")]
+
+    ts = datetime.now().strftime("%Y%m%d%H%M%S")
+
+    image_paths = []
+
+    for image in images:
+        req = Request(
+            url=image[0],
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.3"
+            },
+        )
+        # download the image from Discord
+        with urlopen(req) as response:
+            image_data = response.read()
+            path = content_path(guild_id=ctx.guild.id, compartment="edit", file_name=f"{image[1]}_{ts}.png")
+            image_paths.append(path)
+            with open(path, "wb") as file:
+                file.write(image_data)
+
+    image_response = client.images.edit(
+        model=config.get("OPENAI", "image_edit_model", fallback="dall-e-2"),
+        image=open(image_paths[0], "rb"),
+        mask=open(image_paths[1], "rb"),
+        prompt=arg1,
+        n=int(config.get("OPENAI", "num_image_edits", fallback="1")),
+        size=config.get("OPENAI", "image_edit_resolution", fallback="1024x1024"),
+    )
+
+    file_name = f"edit_{image_response.created}.png"
+    path = content_path(guild_id=ctx.guild.id, compartment="edit", file_name=file_name)
+    url = image_response.data[0].url
+
+    # download the image from OpenAI
+    with urlopen(url) as response:
+        image_data = response.read()
+        with open(path, "wb") as file:
+            file.write(image_data)
+
+    # create our embed object
+    embed = Embed(
+        title=config.get("DISCORD", "edit_embed_title", fallback="B4NG AI Edit Image Response"),
+        description=f"User Input:\n```{arg1}```",
+    )
+    embed.set_image(url=f"attachment://{file_name}")
+
+    # attach our file object
+    file_upload = discord.File(path, filename=file_name)
+
+    await ctx.send(file=file_upload, embed=embed)
 
 
 def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild_id: str = ""):
