@@ -69,8 +69,7 @@ def get_assistant_by_name(guild_id: str, name: str, client: OpenAI = OpenAI()):
         if assistant_record:
             assistant = client.beta.assistants.retrieve(assistant_id=assistant_record.id)
 
-            if assistant.model != assistant_model:
-                old_model = assistant.model
+            if (old_model := assistant.model) != assistant_model:
                 assistant = client.beta.assistants.update(assistant_id=assistant.id, model=assistant_model)
                 print(f"Updated {assistant.id} from {old_model} to {assistant_model}.")
 
