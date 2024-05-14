@@ -106,7 +106,7 @@ async def say(ctx: Context, arg1: str = "", arg2: str = "onyx"):
 @bot.command()
 async def image(ctx: Context, arg1: str, arg2: str = ""):
     """
-    Generate an image using
+    Generate an image using prompts and a model
     :param arg1: The prompt used for image generation
     :param arg2: The model to use
     """
@@ -147,9 +147,15 @@ async def image(ctx: Context, arg1: str, arg2: str = ""):
 
 
 @bot.command()
-async def vision(ctx: Context):
+async def vision(ctx: Context, arg1: str = ""):
+    """
+    Describe/interpret an image
+    :param arg1: A prompt to be used when describing/interpreting the image
+    """
 
     config = get_config()
+    if not arg1:
+        arg1 = config.get("PROMPTS", "vision_prompt", fallback="What is in this image?")
 
     image_url = ctx.message.attachments[0].url
 
@@ -159,7 +165,7 @@ async def vision(ctx: Context):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "What is in this image?"},
+                    {"type": "text", "text": arg1},
                     {"type": "image_url", "image_url": {"url": image_url}},
                 ],
             }
