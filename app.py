@@ -106,7 +106,7 @@ async def say(ctx: Context, arg1: str = "", arg2: str = "onyx"):
 @bot.command()
 async def image(ctx: Context, arg1: str, arg2: str = ""):
     """
-    Generate an image using
+    Generate an image using prompts and a model
     :param arg1: The prompt used for image generation
     :param arg2: The model to use
     """
@@ -144,6 +144,34 @@ async def image(ctx: Context, arg1: str, arg2: str = ""):
     file_upload = discord.File(path, filename=file_name)
 
     await ctx.send(file=file_upload, embed=embed)
+
+
+@bot.command()
+async def vision(ctx: Context, arg1: str = ""):
+    """
+    Describe/interpret an image
+    :param arg1: A prompt to be used when describing/interpreting the image
+    """
+
+    config = get_config()
+    if not arg1:
+        arg1 = config.get("PROMPTS", "vision_prompt", fallback="What is in this image?")
+
+    image_url = ctx.message.attachments[0].url
+
+    response = client.chat.completions.create(
+        model=config.get("OPENAI", "vision_model", fallback="gpt-4o"),
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": arg1},
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ],
+            }
+        ],
+    )
+    await ctx.send(response.choices[0].message.content)
 
 
 def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild_id: str = ""):
