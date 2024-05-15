@@ -10,6 +10,7 @@ from discord.ext.commands import Context, Bot
 from discord import FFmpegOpusAudio, Embed, Intents
 from openai import OpenAI
 from openai.types.beta.assistant import Assistant
+from PIL import Image
 
 from db_utils import get_assistant_by_name, get_thread
 from configuration import get_config
@@ -203,6 +204,10 @@ async def edit(ctx: Context, arg1: str = ""):
             with open(path, "wb") as file:
                 file.write(image_data)
 
+        if not is_square_image(path):
+            await ctx.send("Images used in OpenAI's Image Edit mode need to be square.")
+            return
+
     image_response = client.images.edit(
         model=config.get("OPENAI", "image_edit_model", fallback="dall-e-2"),
         image=open(image_paths[0], "rb"),
@@ -373,6 +378,12 @@ def quiz(guild_id: str, qa: str = ""):
     file_path = generate_speech(guild_id=guild_id, compartment="quiz", tts=tts, file_name=f"{qa}_{response.id}.wav")
 
     return tts, file_path
+
+
+def is_square_image(image_path: Path):
+    with Image.open(image_path) as img:
+        width, height = img.size
+        return width == height
 
 
 bot.run(os.getenv("DISCORD_BOT_KEY"))
