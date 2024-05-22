@@ -8,7 +8,7 @@ import ffmpeg
 import discord
 from discord.ext.commands import Context, Bot
 from discord import FFmpegOpusAudio, Embed, Intents
-from openai import OpenAI
+from openai import AsyncOpenAI
 from openai.types.beta.assistant import Assistant
 from PIL import Image
 
@@ -17,7 +17,7 @@ from configuration import get_config
 
 
 # OpenAI Client
-client = OpenAI()
+client = AsyncOpenAI()
 
 # Bot Client
 intents = Intents.default()
@@ -47,7 +47,7 @@ async def theme(ctx: Context, arg1: str):
     """
 
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    tts, path = gs_intro_song(ctx.guild.id, arg1)
+    tts, path = await gs_intro_song(ctx.guild.id, arg1)
     source = FFmpegOpusAudio(path)
     player = voice.play(source)
     await ctx.send(tts)
@@ -62,7 +62,7 @@ async def rather(ctx: Context, arg1: str = "normal"):
 
     arg1 = arg1.lower()
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    tts, path = would_you_rather(guild_id=ctx.guild.id, topic=arg1)
+    tts, path = await would_you_rather(guild_id=ctx.guild.id, topic=arg1)
     source = FFmpegOpusAudio(path)
     player = voice.play(source)
     await ctx.send(tts)
@@ -77,7 +77,7 @@ async def quiz(ctx: Context, arg1: str = ""):
 
     arg1 = arg1.lower()
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    tts, path = quiz(guild_id=ctx.guild.id, qa=arg1)
+    tts, path = await quiz(guild_id=ctx.guild.id, qa=arg1)
     if not path:
         await ctx.send(tts)
     source = FFmpegOpusAudio(path)
@@ -99,7 +99,7 @@ async def say(ctx: Context, arg1: str = "", arg2: str = "onyx"):
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     file_name = f"{ts}.wav"
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    path = generate_speech(guild_id=ctx.guild.id, compartment="say", file_name=file_name, tts=arg1, voice=arg2)
+    path = await generate_speech(guild_id=ctx.guild.id, compartment="say", file_name=file_name, tts=arg1, voice=arg2)
     source = FFmpegOpusAudio(path)
     player = voice.play(source)
 
@@ -118,7 +118,7 @@ async def image(ctx: Context, arg1: str, arg2: str = ""):
         arg2 = config.get("OPENAI", "image_model", fallback="dall-e-2")
 
     # create image and get relevant information
-    image_response = client.images.generate(prompt=arg1, model=arg2)
+    image_response = await client.images.generate(prompt=arg1, model=arg2)
     url = image_response.data[0].url
     revised_prompt = image_response.data[0].revised_prompt
 
@@ -160,7 +160,7 @@ async def vision(ctx: Context, arg1: str = ""):
 
     image_url = ctx.message.attachments[0].url
 
-    response = client.chat.completions.create(
+    response = await client.chat.completions.create(
         model=config.get("OPENAI", "vision_model", fallback="gpt-4o"),
         messages=[
             {
@@ -208,7 +208,7 @@ async def edit(ctx: Context, arg1: str = ""):
             await ctx.send("Images used in OpenAI's Image Edit mode need to be square.")
             return
 
-    image_response = client.images.edit(
+    image_response = await client.images.edit(
         model=config.get("OPENAI", "image_edit_model", fallback="dall-e-2"),
         image=open(image_paths[0], "rb"),
         mask=open(image_paths[1], "rb"),
@@ -240,24 +240,24 @@ async def edit(ctx: Context, arg1: str = ""):
     await ctx.send(file=file_upload, embed=embed)
 
 
-def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild_id: str = ""):
+async def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild_id: str = ""):
 
-    thread = get_thread(guild_id=guild_id, name=thread_name, client=client, assistant_id=assistant.id)
+    thread = await get_thread(guild_id=guild_id, name=thread_name, client=client, assistant_id=assistant.id)
 
     # add a message to the thread
-    client.beta.threads.messages.create(
+    await client.beta.threads.messages.create(
         thread_id=thread.id,
         role="user",
         content=prompt,
     )
 
     # run the thread with the assistant and monitor the situation
-    run = client.beta.threads.runs.create_and_poll(thread_id=thread.id, assistant_id=assistant.id)
+    run = await client.beta.threads.runs.create_and_poll(thread_id=thread.id, assistant_id=assistant.id)
 
     while run.status != "completed":
         time.sleep(0.25)
 
-    messages = client.beta.threads.messages.list(thread_id=thread.id)
+    messages = await client.beta.threads.messages.list(thread_id=thread.id)
 
     # the most recent message in the thread is from the assistant
     response = messages.data[0]
@@ -265,37 +265,29 @@ def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild
     return response
 
 
-def content_path(guild_id: str, compartment: str, file_name: str):
+async def generate_speech(guild_id: str, compartment: str, file_name: str, tts: str, voice: str = "onyx") -> str:
     config = get_config()
-    ts = datetime.now().strftime(config.get("GENERAL", "session_strftime", fallback="dall-e-2"))
-    dir_path = Path(f"generated_content/guild_{guild_id}/{ts}/{compartment}")
-    dir_path.mkdir(parents=True, exist_ok=True)
-    return dir_path / file_name
-
-
-def generate_speech(guild_id: str, compartment: str, file_name: str, tts: str, voice: str = "onyx") -> str:
-    config = get_config()
-    with client.audio.speech.with_streaming_response.create(
+    async with client.audio.speech.with_streaming_response.create(
         model=config.get("OPENAI", "speech_model", fallback="tts-1"),
         voice=voice,
         input=tts,
         response_format=config.get("OPENAI", "speech_file_format", fallback="wav"),
     ) as speech:
         file_path = content_path(guild_id=guild_id, compartment=compartment, file_name=file_name)
-        speech.stream_to_file(file_path)
+        await speech.stream_to_file(file_path)
 
     return file_path
 
 
-def gs_intro_song(guild_id: str, name: str):
+async def gs_intro_song(guild_id: str, name: str):
     config = get_config()
     name = f"{name}_theme"
-    assistant = get_assistant_by_name(guild_id=guild_id, name="gs_host", client=client)
+    assistant = await get_assistant_by_name(guild_id=guild_id, name="gs_host", client=client)
 
     # check if this is a new assistant
     if not assistant.instructions:
         assistant_instructions = config.get("PROMPTS", "gs_host")
-        assistant = client.beta.assistants.update(
+        assistant = await client.beta.assistants.update(
             assistant_id=assistant.id, instructions=assistant_instructions, name="gs_host"
         )
 
@@ -303,11 +295,13 @@ def gs_intro_song(guild_id: str, name: str):
 
     # openai api work
     ## generate the show intro text
-    response = new_response(assistant=assistant, prompt=prompt, guild_id=guild_id, thread_name=name)
+    response = await new_response(assistant=assistant, prompt=prompt, guild_id=guild_id, thread_name=name)
 
     ## generate a speech wav
     tts = response.content[0].text.value
-    file_path = generate_speech(guild_id=guild_id, compartment="theme", tts=tts, file_name=f"{name}_{response.id}.wav")
+    file_path = await generate_speech(
+        guild_id=guild_id, compartment="theme", tts=tts, file_name=f"{name}_{response.id}.wav"
+    )
 
     # ffmpeg work to combine streams
     ## load both audio files
@@ -328,40 +322,40 @@ def gs_intro_song(guild_id: str, name: str):
     return tts, ouput_file
 
 
-def would_you_rather(guild_id: str, topic: str):
+async def would_you_rather(guild_id: str, topic: str):
     config = get_config()
     assistant_name = f"rather_{topic}"
-    assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
+    assistant = await get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
 
     # check if this is a new assistant
     if not assistant.instructions:
         prompt = config.get("PROMPTS", assistant_name)
         assistant_instructions = prompt
-        assistant = client.beta.assistants.update(
+        assistant = await client.beta.assistants.update(
             assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
         )
 
     new_hypothetical_prompt = config.get("PROMPTS", "new_hypothetical")
 
-    response = new_response(
+    response = await new_response(
         assistant=assistant, thread_name=assistant_name, prompt=new_hypothetical_prompt, guild_id=guild_id
     )
     tts = response.content[0].text.value
-    file_path = generate_speech(guild_id=guild_id, compartment="rather", tts=tts, file_name=f"{response.id}.wav")
+    file_path = await generate_speech(guild_id=guild_id, compartment="rather", tts=tts, file_name=f"{response.id}.wav")
 
     return tts, file_path
 
 
-def quiz(guild_id: str, qa: str = ""):
+async def quiz(guild_id: str, qa: str = ""):
     config = get_config()
     assistant_name = f"quiz_{qa}"
 
     if qa == "question":
-        assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
+        assistant = await get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
         assistant_instructions = config.get("PROMPTS", assistant_name)
         prompt = "Ask me a new question."
     elif qa == "answer":
-        assistant = get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
+        assistant = await get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
         assistant_instructions = config.get("PROMPTS", assistant_name)
         prompt = "Answer the question that was just asked with one word or phrase. "
     else:
@@ -369,15 +363,25 @@ def quiz(guild_id: str, qa: str = ""):
 
     # check if this is a new assistant
     if not assistant.instructions:
-        assistant = client.beta.assistants.update(
+        assistant = await client.beta.assistants.update(
             assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
         )
 
-    response = new_response(assistant=assistant, thread_name="quiz", prompt=prompt, guild_id=guild_id)
+    response = await new_response(assistant=assistant, thread_name="quiz", prompt=prompt, guild_id=guild_id)
     tts = response.content[0].text.value
-    file_path = generate_speech(guild_id=guild_id, compartment="quiz", tts=tts, file_name=f"{qa}_{response.id}.wav")
+    file_path = await generate_speech(
+        guild_id=guild_id, compartment="quiz", tts=tts, file_name=f"{qa}_{response.id}.wav"
+    )
 
     return tts, file_path
+
+
+def content_path(guild_id: str, compartment: str, file_name: str):
+    config = get_config()
+    ts = datetime.now().strftime(config.get("GENERAL", "session_strftime", fallback="dall-e-2"))
+    dir_path = Path(f"generated_content/guild_{guild_id}/{ts}/{compartment}")
+    dir_path.mkdir(parents=True, exist_ok=True)
+    return dir_path / file_name
 
 
 def is_square_image(image_path: Path):
