@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from openai import OpenAI
+from openai.types.beta import assistant, thread
+from openai import AsyncOpenAI
 from sqlmodel import Field, SQLModel, create_engine, Session, select, Relationship
 
 from configuration import get_config
@@ -33,7 +34,7 @@ class Assistant(SQLModel, table=True):
     thread: Thread | None = Relationship(back_populates="assistants")
 
 
-def get_thread(guild_id: str, name: str, assistant_id: str, client: OpenAI = OpenAI()):
+async def get_thread(guild_id: str, name: str, assistant_id: str, client: AsyncOpenAI = AsyncOpenAI()) -> thread.Thread:
     with get_session() as session:
         statement = select(Thread).where(Thread.name == name).where(Thread.guild_id == guild_id)
         results = session.exec(statement)
@@ -41,9 +42,9 @@ def get_thread(guild_id: str, name: str, assistant_id: str, client: OpenAI = Ope
         assistant_record = get_assistant_record_by_id(assistant_id=assistant_id)
 
         if thread_record:
-            thread = client.beta.threads.retrieve(thread_id=thread_record.id)
+            thread = await client.beta.threads.retrieve(thread_id=thread_record.id)
         else:
-            thread = client.beta.threads.create()
+            thread = await client.beta.threads.create()
             # new record
             thread_entry = Thread(id=thread.id, guild_id=guild_id, name=name)
             session.add(thread_entry)
@@ -57,7 +58,7 @@ def get_thread(guild_id: str, name: str, assistant_id: str, client: OpenAI = Ope
         return thread
 
 
-def get_assistant_by_name(guild_id: str, name: str, client: OpenAI = OpenAI()):
+async def get_assistant_by_name(guild_id: str, name: str, client: AsyncOpenAI = AsyncOpenAI()) -> assistant.Assistant:
     with get_session() as session:
         statement = select(Assistant).where(Assistant.guild_id == guild_id).where(Assistant.name == name)
         results = session.exec(statement)
@@ -67,14 +68,14 @@ def get_assistant_by_name(guild_id: str, name: str, client: OpenAI = OpenAI()):
 
         assistant_record = results.first()
         if assistant_record:
-            assistant = client.beta.assistants.retrieve(assistant_id=assistant_record.id)
+            assistant = await client.beta.assistants.retrieve(assistant_id=assistant_record.id)
 
             if (old_model := assistant.model) != assistant_model:
-                assistant = client.beta.assistants.update(assistant_id=assistant.id, model=assistant_model)
+                assistant = await client.beta.assistants.update(assistant_id=assistant.id, model=assistant_model)
                 print(f"Updated {assistant.id} from {old_model} to {assistant_model}.")
 
         else:
-            assistant = client.beta.assistants.create(model=assistant_model)
+            assistant = await client.beta.assistants.create(model=assistant_model)
             assistant_entry = Assistant(id=assistant.id, guild_id=guild_id, name=name)
             session = get_session()
             session.add(assistant_entry)
