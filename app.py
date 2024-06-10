@@ -86,20 +86,19 @@ async def quiz(ctx: Context, arg1: str = ""):
 
 
 @bot.command()
-async def say(ctx: Context, arg1: str = "", arg2: str = "onyx"):
+async def say(ctx: Context, *, arg: str = ""):
     """
     say whatever somebody types
-    :param arg1: string of quoted text to speak
-    :param arg2: AI speaker to use
+    :param arg: string of text to speak
     """
 
-    if not arg1:
-        await ctx.send("You need to type something in quotes after the command.")
+    if not arg:
+        await ctx.send("You need to type something after the command.")
         return
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     file_name = f"{ts}.wav"
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    path = await generate_speech(guild_id=ctx.guild.id, compartment="say", file_name=file_name, tts=arg1, voice=arg2)
+    path = await generate_speech(guild_id=ctx.guild.id, compartment="say", file_name=file_name, tts=arg)
     source = FFmpegOpusAudio(path)
     player = voice.play(source)
 
@@ -148,15 +147,15 @@ async def image(ctx: Context, arg1: str, arg2: str = ""):
 
 
 @bot.command()
-async def vision(ctx: Context, arg1: str = ""):
+async def vision(ctx: Context, *, arg: str = ""):
     """
     Describe/interpret an image
-    :param arg1: A prompt to be used when describing/interpreting the image
+    :param arg: A prompt to be used when describing/interpreting the image
     """
 
     config = get_config()
-    if not arg1:
-        arg1 = config.get("PROMPTS", "vision_prompt", fallback="What is in this image?")
+    if not arg:
+        arg = config.get("PROMPTS", "vision_prompt", fallback="What is in this image?")
 
     image_url = ctx.message.attachments[0].url
 
@@ -166,7 +165,7 @@ async def vision(ctx: Context, arg1: str = ""):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": arg1},
+                    {"type": "text", "text": arg},
                     {"type": "image_url", "image_url": {"url": image_url}},
                 ],
             }
@@ -265,11 +264,11 @@ async def new_response(assistant: Assistant, thread_name: str, prompt: str = "",
     return response
 
 
-async def generate_speech(guild_id: str, compartment: str, file_name: str, tts: str, voice: str = "onyx") -> str:
+async def generate_speech(guild_id: str, compartment: str, file_name: str, tts: str) -> str:
     config = get_config()
     async with client.audio.speech.with_streaming_response.create(
         model=config.get("OPENAI", "speech_model", fallback="tts-1"),
-        voice=voice,
+        voice=config.get("OPENAI", "voice", fallback="onyx"),
         input=tts,
         response_format=config.get("OPENAI", "speech_file_format", fallback="wav"),
     ) as speech:
