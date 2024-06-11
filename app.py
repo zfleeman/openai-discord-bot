@@ -175,10 +175,10 @@ async def vision(ctx: Context, *, arg: str = ""):
 
 
 @bot.command()
-async def edit(ctx: Context, arg1: str = ""):
+async def edit(ctx: Context, *, arg: str = ""):
     """
     Edit an image using the original image and its mask
-    :param arg1: A prompt to be used when describing the desired image edit
+    :param arg: A prompt to be used when describing the desired image edit
     """
 
     config = get_config()
@@ -211,7 +211,7 @@ async def edit(ctx: Context, arg1: str = ""):
         model=config.get("OPENAI", "image_edit_model", fallback="dall-e-2"),
         image=open(image_paths[0], "rb"),
         mask=open(image_paths[1], "rb"),
-        prompt=arg1,
+        prompt=arg,
         n=int(config.get("OPENAI", "num_image_edits", fallback="1")),
         size=config.get("OPENAI", "image_edit_resolution", fallback="1024x1024"),
     )
@@ -229,7 +229,7 @@ async def edit(ctx: Context, arg1: str = ""):
     # create our embed object
     embed = Embed(
         title=config.get("DISCORD", "edit_embed_title", fallback="B4NG AI Edit Image Response"),
-        description=f"User Input:\n```{arg1}```",
+        description=f"User Input:\n```{arg}```",
     )
     embed.set_image(url=f"attachment://{file_name}")
 
