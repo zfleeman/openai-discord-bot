@@ -11,7 +11,7 @@ from discord import FFmpegOpusAudio, Embed, Intents
 from openai import AsyncOpenAI
 from PIL import Image
 
-from db_utils import get_thread
+from db_utils import get_thread_id
 from configuration import get_config
 
 
@@ -241,21 +241,24 @@ async def new_thread_response(
     thread_name: str, prompt: str = "", guild_id: str = "", response_format: Union[str, dict] = "auto"
 ):
 
-    thread = await get_thread(guild_id=guild_id, name=thread_name, client=client)
+    config = get_config()
+    assistant_id = config.get("OPENAI_ASSISTANTS", thread_name)
+
+    thread_id = await get_thread_id(guild_id=guild_id, name=thread_name, assistant_id=assistant_id, client=client)
 
     # add a message to the thread
     await client.beta.threads.messages.create(
-        thread_id=thread.id,
+        thread_id=thread_id,
         role="user",
         content=prompt,
     )
 
     # run the thread with the assistant and monitor the situation
     run = await client.beta.threads.runs.create_and_poll(
-        thread_id=thread.id, assistant_id=thread.assistant_id, response_format=response_format
+        thread_id=thread_id, assistant_id=assistant_id, response_format=response_format
     )
 
-    messages = await client.beta.threads.messages.list(thread_id=thread.id)
+    messages = await client.beta.threads.messages.list(thread_id=thread_id)
 
     if response_format == "auto":
         # the most recent message in the thread is from the assistant
