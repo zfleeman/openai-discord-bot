@@ -1,4 +1,6 @@
 import os
+import json
+import asyncio
 from pathlib import Path
 from datetime import datetime
 from urllib.request import urlopen, Request
@@ -73,14 +75,36 @@ async def trivia(ctx: Context):
     needs work
     """
 
-    arg1 = arg1.lower()
-    voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    tts, path = await trivia(guild_id=ctx.guild.id)
-    if not path:
-        await ctx.send(tts)
-    source = FFmpegOpusAudio(path)
-    player = voice.play(source)
-    await ctx.send(tts)
+    channel = ctx.channel
+
+    # voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+    response_dict = await get_trivia_question(guild_id=ctx.guild.id)
+
+    question = response_dict.get("question")
+
+    # lazy text formatting. could be improved
+    question += "\n\n"
+
+    numbers = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"]
+    for number, choice in zip(numbers, response_dict["choices"]):
+        question += f"{number} {choice}\n\n"
+
+    embed = Embed(title="Trivia Question", description=question)
+
+    message = await ctx.send(embed=embed)
+
+    for number in numbers:
+        await message.add_reaction(number)
+
+    await asyncio.sleep(5)
+
+    message = await channel.fetch_message(message.id)
+
+    results = message.reactions
+
+    for result in results:
+        users = await result.users()
+    print("hey")
 
 
 @bot.command()
@@ -260,12 +284,8 @@ async def new_thread_response(
 
     messages = await client.beta.threads.messages.list(thread_id=thread_id)
 
-    if response_format == "auto":
-        # the most recent message in the thread is from the assistant
-        response = messages.data[0]
-    else:
-        # TODO: json mode
-        pass
+    # get the most recent response from the assistant
+    response = messages.data[0]
 
     return response
 
@@ -332,17 +352,21 @@ async def would_you_rather(guild_id: str, topic: str):
     return tts, file_path
 
 
-async def trivia(guild_id: str):
+async def get_trivia_question(guild_id: str) -> dict:
     config = get_config()
-    trivia_prompt = config.get("PROMPTS", "trivia")
+    trivia_prompt = config.get("PROMPTS", "trivia_game")
 
     response = await new_thread_response(
-        thread_name="trivia", prompt=trivia_prompt, guild_id=guild_id, response_format={"type": "json_object"}
+        thread_name="trivia_game", prompt=trivia_prompt, guild_id=guild_id, response_format={"type": "json_object"}
     )
+
+    text_json = response.content[0].text.value
+
+    response_dict = json.loads(text_json)
 
     # may be something to do, here.
 
-    return response
+    return response_dict
 
 
 def content_path(guild_id: str, compartment: str, file_name: str):
