@@ -3,8 +3,6 @@ from datetime import datetime
 from openai import AsyncOpenAI
 from sqlmodel import Field, SQLModel, create_engine, Session, select
 
-from configuration import get_config
-
 
 sqlite_file_name = "database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"

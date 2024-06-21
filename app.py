@@ -6,6 +6,7 @@ from datetime import datetime
 from urllib.request import urlopen, Request
 from typing import Union
 from collections import Counter
+from configparser import ConfigParser
 
 import ffmpeg
 import discord
@@ -15,7 +16,6 @@ from openai import AsyncOpenAI
 from PIL import Image
 
 from db_utils import get_thread_id
-from configuration import get_config
 
 
 # OpenAI Client
@@ -71,32 +71,33 @@ async def rather(ctx: Context, arg1: str = "normal"):
 
 
 @bot.command()
-async def trivia(ctx: Context, arg1: int = 3, arg2: int = 30):
+async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30):
     """
     :param arg1: number of questions to ask
-    :param arg2: seconds to wait in between questions
+    :param arg2: seconds to wait before sharing the answer
     """
 
-    scores = {}
     config = get_config()
+    trivia_sleep = int(config.get("GENERAL", "trivia_sleep", fallback=5))
+    trivia_points = int(config.get("GENERAL", "trivia_points", fallback=10))
+    trivia_penalty = int(config.get("GENERAL", "trivia_penalty", fallback=-10))
 
-    bot_id = int(config.get("DISCORD", "bot_id", fallback=1229488188288925718))
+    # get our channel to find the message reactions later
+    channel = ctx.channel
 
+    scores = {}
     round = 0
     while round < arg1:
-        # get our channel to find the message reactions later
-        channel = ctx.channel
-
-        # voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
         response_dict = await get_trivia_question(guild_id=ctx.guild.id)
 
         question = response_dict.get("question")
         answer = response_dict.get("answer")
-        multiplier = float(response_dict.get("muliplier", 1))
+        multiplier = float(response_dict.get("multiplier", 1))
 
-        # lazy text formatting. could be improved
+        # lazy text formatting
         question += "\n\n"
 
+        # attach emoji to the question, and find the winning emoji for later use
         numbers = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"]
         answer_emoji = ""
         for number, choice in zip(numbers, response_dict["choices"]):
@@ -105,12 +106,13 @@ async def trivia(ctx: Context, arg1: int = 3, arg2: int = 30):
             if choice == answer:
                 answer_emoji = number
 
+        # if the AI did not follow the requestion JSON format/data
         if not answer_emoji:
-            await ctx.send("The answer string could not be matched to any of the choices. Big problem.")
+            await ctx.send("The answer string could not be matched to any of the choices. This is a big problem.")
             return
 
-        question_embed = Embed(title="Trivia Question", description=question)
-        question_embed.set_footer(text=f"{multiplier} score multiplier.")
+        question_embed = Embed(title="Trivia Question", description=question, color=3447003)
+        question_embed.set_footer(text=f"{multiplier}x score multiplier.")
 
         # send the question and attach the emojis as reactions
         message = await ctx.send(embed=question_embed)
@@ -127,12 +129,13 @@ async def trivia(ctx: Context, arg1: int = 3, arg2: int = 30):
         result_dict = {}
         entries = []
         for reaction in reactions:
-            result_dict[reaction.emoji] = {}
-            correct_answer = reaction.emoji == answer_emoji
-            users = [user.name async for user in reaction.users() if user.id != bot_id]
-            entries.extend(users)
-            result_dict[reaction.emoji]["users"] = users
-            result_dict[reaction.emoji]["is_answer"] = correct_answer
+            if reaction.emoji in numbers:
+                result_dict[reaction.emoji] = {}
+                correct_answer = reaction.emoji == answer_emoji
+                users = [user.display_name async for user in reaction.users() if not user.bot]
+                entries.extend(users)
+                result_dict[reaction.emoji]["users"] = users
+                result_dict[reaction.emoji]["is_answer"] = correct_answer
 
         # new users
         for entry in entries:
@@ -144,29 +147,48 @@ async def trivia(ctx: Context, arg1: int = 3, arg2: int = 30):
         duplicates = [string for string, count in counts.items() if count > 1]
         if duplicates:
             for duplicate in duplicates:
-                scores[duplicate] -= 10
+                scores[duplicate] -= trivia_penalty
 
         for value in result_dict.values():
             if value["is_answer"]:
                 for user in value["users"]:
                     if user not in duplicates:
-                        scores[user] += 10 * multiplier
+                        scores[user] += trivia_points * multiplier
 
         answer_embed = Embed(
-            title="Trivia Answer", description=f"The correct answer is **{answer}**.\nThe current scores are: {scores}"
+            title="Trivia Answer",
+            description=f"The correct answer is **{answer}**.",
+            color=5763719,
         )
         if duplicates:
             answer_embed.set_footer(
-                text=f"{', '.join(duplicates)} were docked points because they voted on more than one answer."
+                text=f"{', '.join(duplicates)} ➡️ Docked points because they voted on more than one answer."
             )
 
+        not_last_round = (round + 1) != arg1
+
+        if not_last_round:
+            answer_embed.description += f"\n\nScores:\n{dict_to_ordered_string(scores)}"
+
         await ctx.send(embed=answer_embed)
+
+        if not_last_round:
+            await asyncio.sleep(trivia_sleep)
+        else:
+            await asyncio.sleep(2)
         round += 1
 
+    # find our winner(s)
     winning_score = max(scores.values())
-    winner = [key for key, value in scores.items() if value == winning_score]
+    winners = [key for key, value in scores.items() if value == winning_score]
 
-    await ctx.send(f"Congratulations, **{winner}**, you won!\nThe final result: {scores}")
+    winner_embed = Embed(
+        title="END OF TRIVIA GAME",
+        description=f"Congratulations, **{', '.join(winners)}**. You won!\n\nResults:\n{dict_to_ordered_string(scores)}",
+        color=16776960,
+    )
+
+    await ctx.send(embed=winner_embed)
 
 
 @bot.command()
@@ -443,6 +465,22 @@ def is_square_image(image_path: Path):
     with Image.open(image_path) as img:
         width, height = img.size
         return width == height
+
+
+def dict_to_ordered_string(data: dict) -> str:
+    # Sort the dictionary items by value in descending order
+    sorted_items = sorted(data.items(), key=lambda item: item[1], reverse=True)
+
+    # Format the sorted items into a numbered list
+    formatted_string = "\n".join([f"{i+1}. **{key}**: {value}" for i, (key, value) in enumerate(sorted_items)])
+
+    return formatted_string
+
+
+def get_config():
+    config = ConfigParser()
+    config.read("config.ini")
+    return config
 
 
 bot.run(os.getenv("DISCORD_BOT_KEY"))
