@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 from urllib.request import urlopen, Request
 from typing import Union
+from collections import Counter
 
 import ffmpeg
 import discord
@@ -70,41 +71,102 @@ async def rather(ctx: Context, arg1: str = "normal"):
 
 
 @bot.command()
-async def trivia(ctx: Context):
+async def trivia(ctx: Context, arg1: int = 3, arg2: int = 30):
     """
-    needs work
+    :param arg1: number of questions to ask
+    :param arg2: seconds to wait in between questions
     """
 
-    channel = ctx.channel
+    scores = {}
+    config = get_config()
 
-    # voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    response_dict = await get_trivia_question(guild_id=ctx.guild.id)
+    bot_id = int(config.get("DISCORD", "bot_id", fallback=1229488188288925718))
 
-    question = response_dict.get("question")
+    round = 0
+    while round < arg1:
+        # get our channel to find the message reactions later
+        channel = ctx.channel
 
-    # lazy text formatting. could be improved
-    question += "\n\n"
+        # voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+        response_dict = await get_trivia_question(guild_id=ctx.guild.id)
 
-    numbers = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"]
-    for number, choice in zip(numbers, response_dict["choices"]):
-        question += f"{number} {choice}\n\n"
+        question = response_dict.get("question")
+        answer = response_dict.get("answer")
+        multiplier = float(response_dict.get("muliplier", 1))
 
-    embed = Embed(title="Trivia Question", description=question)
+        # lazy text formatting. could be improved
+        question += "\n\n"
 
-    message = await ctx.send(embed=embed)
+        numbers = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"]
+        answer_emoji = ""
+        for number, choice in zip(numbers, response_dict["choices"]):
+            question += f"{number} {choice}\n\n"
 
-    for number in numbers:
-        await message.add_reaction(number)
+            if choice == answer:
+                answer_emoji = number
 
-    await asyncio.sleep(5)
+        if not answer_emoji:
+            await ctx.send("The answer string could not be matched to any of the choices. Big problem.")
+            return
 
-    message = await channel.fetch_message(message.id)
+        question_embed = Embed(title="Trivia Question", description=question)
+        question_embed.set_footer(text=f"{multiplier} score multiplier.")
 
-    results = message.reactions
+        # send the question and attach the emojis as reactions
+        message = await ctx.send(embed=question_embed)
+        for number in numbers:
+            await message.add_reaction(number)
 
-    for result in results:
-        users = await result.users()
-    print("hey")
+        # wait between questions
+        await asyncio.sleep(arg2)
+
+        # begin working with the results
+        message = await channel.fetch_message(message.id)
+        reactions = message.reactions
+
+        result_dict = {}
+        entries = []
+        for reaction in reactions:
+            result_dict[reaction.emoji] = {}
+            correct_answer = reaction.emoji == answer_emoji
+            users = [user.name async for user in reaction.users() if user.id != bot_id]
+            entries.extend(users)
+            result_dict[reaction.emoji]["users"] = users
+            result_dict[reaction.emoji]["is_answer"] = correct_answer
+
+        # new users
+        for entry in entries:
+            if entry not in scores.keys():
+                scores[entry] = 0
+
+        # users with multiple votes
+        counts = Counter(entries)
+        duplicates = [string for string, count in counts.items() if count > 1]
+        if duplicates:
+            for duplicate in duplicates:
+                scores[duplicate] -= 10
+
+        for value in result_dict.values():
+            if value["is_answer"]:
+                for user in value["users"]:
+                    if user not in duplicates:
+                        scores[user] += 10 * multiplier
+
+        answer_embed = Embed(
+            title="Trivia Answer", description=f"The correct answer is **{answer}**.\nThe current scores are: {scores}"
+        )
+        if duplicates:
+            answer_embed.set_footer(
+                text=f"{', '.join(duplicates)} were docked points because they voted on more than one answer."
+            )
+
+        await ctx.send(embed=answer_embed)
+        round += 1
+
+    winning_score = max(scores.values())
+    winner = [key for key, value in scores.items() if value == winning_score]
+
+    await ctx.send(f"Congratulations, **{winner}**, you won!\nThe final result: {scores}")
 
 
 @bot.command()
