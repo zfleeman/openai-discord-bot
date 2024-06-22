@@ -88,7 +88,7 @@ async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30, arg3: int = 0):
     if arg1 > max_questions:
         await ctx.send(f"You can't have the bot ask more than **{max_questions}** questions.")
         return
-    
+
     if (arg2 > max_time) or (arg3 > max_time):
         await ctx.send(f"You can't have the bot wait more than **{max_time}** seconds.")
         return
@@ -104,7 +104,7 @@ async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30, arg3: int = 0):
     start_embed = Embed(
         title="Trivia Game Initiated",
         description=f"A new trivia game is starting.\n\n- **{arg1} questions** will be asked\n- Players have **{arg2} seconds** to pick an answer.",
-        color=16776960
+        color=16776960,
     )
 
     await ctx.send(content=notification_content, embed=start_embed)
