@@ -71,19 +71,44 @@ async def rather(ctx: Context, arg1: str = "normal"):
 
 
 @bot.command()
-async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30):
+async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30, arg3: int = 0):
     """
     :param arg1: number of questions to ask
     :param arg2: seconds to wait before sharing the answer
+    :param arg3: seconds to wait before starting the trivia game. notifies channel if > 0
     """
 
     config = get_config()
     trivia_sleep = int(config.get("GENERAL", "trivia_sleep", fallback=5))
     trivia_points = int(config.get("GENERAL", "trivia_points", fallback=10))
     trivia_penalty = int(config.get("GENERAL", "trivia_penalty", fallback=-10))
+    max_questions = int(config.get("GENERAL", "max_questions", fallback=20))
+    max_time = int(config.get("GENERAL", "max_time", fallback=300))
+
+    if arg1 > max_questions:
+        await ctx.send(f"You can't have the bot ask more than **{max_questions}** questions.")
+        return
+    
+    if (arg2 > max_time) or (arg3 > max_time):
+        await ctx.send(f"You can't have the bot wait more than **{max_time}** seconds.")
+        return
 
     # get our channel to find the message reactions later
     channel = ctx.channel
+
+    notification_content = ""
+    if arg3:
+        notification_content = f"@here A new Trivia game will start in {arg3} seconds! Get ready!"
+
+    # trivia start embed
+    start_embed = Embed(
+        title="Trivia Game Initiated",
+        description=f"A new trivia game is starting.\n\n- **{arg1} questions** will be asked\n- Players have **{arg2} seconds** to pick an answer.",
+        color=16776960
+    )
+
+    await ctx.send(content=notification_content, embed=start_embed)
+    await asyncio.sleep(arg3)
 
     scores = {}
     round = 0
@@ -111,7 +136,7 @@ async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30):
             await ctx.send("The answer string could not be matched to any of the choices. This is a big problem.")
             return
 
-        question_embed = Embed(title="Trivia Question", description=question, color=3447003)
+        question_embed = Embed(title=f"Trivia Question {round+1}/{arg1}", description=question, color=3447003)
         question_embed.set_footer(text=f"{multiplier}x score multiplier.")
 
         # send the question and attach the emojis as reactions
