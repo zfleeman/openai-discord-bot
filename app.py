@@ -421,7 +421,7 @@ async def gs_intro_song(guild_id: str, name: str):
 
     # openai api work
     ## generate the show intro text
-    response = await new_thread_response(prompt=prompt, guild_id=guild_id, thread_name=name)
+    response = await new_thread_response(prompt=prompt, guild_id=guild_id, thread_name="gs_host")
 
     ## generate a speech wav
     tts = response.content[0].text.value
