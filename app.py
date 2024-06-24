@@ -1,19 +1,21 @@
 import os
-import time
+import json
+import asyncio
 from pathlib import Path
 from datetime import datetime
 from urllib.request import urlopen, Request
+from typing import Union
+from collections import Counter
+from configparser import ConfigParser
 
 import ffmpeg
 import discord
 from discord.ext.commands import Context, Bot
 from discord import FFmpegOpusAudio, Embed, Intents
 from openai import AsyncOpenAI
-from openai.types.beta.assistant import Assistant
 from PIL import Image
 
-from db_utils import get_assistant_by_name, get_thread
-from configuration import get_config
+from db_utils import get_thread_id
 
 
 # OpenAI Client
@@ -69,20 +71,149 @@ async def rather(ctx: Context, arg1: str = "normal"):
 
 
 @bot.command()
-async def quiz(ctx: Context, arg1: str = ""):
+async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30, arg3: int = 0):
     """
-    Play the 'quiz question' game
-    :param arg1: 'question' or 'answer'
+    :param arg1: number of questions to ask
+    :param arg2: seconds to wait before sharing the answer
+    :param arg3: seconds to wait before starting the trivia game. notifies channel if > 0
     """
 
-    arg1 = arg1.lower()
-    voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    tts, path = await quiz(guild_id=ctx.guild.id, qa=arg1)
-    if not path:
-        await ctx.send(tts)
-    source = FFmpegOpusAudio(path)
-    player = voice.play(source)
-    await ctx.send(tts)
+    config = get_config()
+    trivia_sleep = int(config.get("GENERAL", "trivia_sleep", fallback=5))
+    trivia_points = int(config.get("GENERAL", "trivia_points", fallback=10))
+    trivia_penalty = int(config.get("GENERAL", "trivia_penalty", fallback=-10))
+    max_questions = int(config.get("GENERAL", "max_questions", fallback=20))
+    max_time = int(config.get("GENERAL", "max_time", fallback=300))
+
+    if arg1 > max_questions:
+        await ctx.send(f"You can't have the bot ask more than **{max_questions}** questions.")
+        return
+
+    if (arg2 > max_time) or (arg3 > max_time):
+        await ctx.send(f"You can't have the bot wait more than **{max_time}** seconds.")
+        return
+
+    # get our channel to find the message reactions later
+    channel = ctx.channel
+
+    notification_content = ""
+    if arg3:
+        notification_content = f"@here A new Trivia game will start in {arg3} seconds! Get ready!"
+
+    # trivia start embed
+    start_embed = Embed(
+        title="Trivia Game Initiated",
+        description=f"A new trivia game is starting.\n\n- **{arg1} questions** will be asked\n- Players have **{arg2} seconds** to pick an answer.",
+        color=16776960,
+    )
+
+    await ctx.send(content=notification_content, embed=start_embed)
+    await asyncio.sleep(arg3)
+
+    scores = {}
+    round = 0
+    while round < arg1:
+        response_dict = await get_trivia_question(guild_id=ctx.guild.id)
+
+        question = response_dict.get("question")
+        answer = response_dict.get("answer")
+        multiplier = float(response_dict.get("multiplier", 1))
+
+        # lazy text formatting
+        question += "\n\n"
+
+        # attach emoji to the question, and find the winning emoji for later use
+        numbers = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"]
+        answer_emoji = ""
+        for number, choice in zip(numbers, response_dict["choices"]):
+            question += f"{number} {choice}\n\n"
+
+            if choice == answer:
+                answer_emoji = number
+
+        # if the AI did not follow the requestion JSON format/data
+        if not answer_emoji:
+            await ctx.send("The answer string could not be matched to any of the choices. This is a big problem.")
+            return
+
+        question_embed = Embed(title=f"Trivia Question {round+1}/{arg1}", description=question, color=3447003)
+        question_embed.set_footer(text=f"{multiplier}x score multiplier.")
+
+        # send the question and attach the emojis as reactions
+        message = await ctx.send(embed=question_embed)
+        for number in numbers:
+            await message.add_reaction(number)
+
+        # wait between questions
+        await asyncio.sleep(arg2)
+
+        # begin working with the results
+        message = await channel.fetch_message(message.id)
+        reactions = message.reactions
+
+        result_dict = {}
+        entries = []
+        for reaction in reactions:
+            if reaction.emoji in numbers:
+                result_dict[reaction.emoji] = {}
+                correct_answer = reaction.emoji == answer_emoji
+                users = [user.display_name async for user in reaction.users() if not user.bot]
+                entries.extend(users)
+                result_dict[reaction.emoji]["users"] = users
+                result_dict[reaction.emoji]["is_answer"] = correct_answer
+
+        # new users
+        for entry in entries:
+            if entry not in scores.keys():
+                scores[entry] = 0
+
+        # users with multiple votes
+        counts = Counter(entries)
+        duplicates = [string for string, count in counts.items() if count > 1]
+        if duplicates:
+            for duplicate in duplicates:
+                scores[duplicate] -= trivia_penalty
+
+        for value in result_dict.values():
+            if value["is_answer"]:
+                for user in value["users"]:
+                    if user not in duplicates:
+                        scores[user] += trivia_points * multiplier
+
+        answer_embed = Embed(
+            title="Trivia Answer",
+            description=f"The correct answer is **{answer}**.",
+            color=5763719,
+        )
+        if duplicates:
+            answer_embed.set_footer(
+                text=f"{', '.join(duplicates)} ➡️ Docked points because they voted on more than one answer."
+            )
+
+        not_last_round = (round + 1) != arg1
+
+        if not_last_round:
+            answer_embed.description += f"\n\nScores:\n{dict_to_ordered_string(scores)}"
+
+        await ctx.send(embed=answer_embed)
+
+        if not_last_round:
+            await asyncio.sleep(trivia_sleep)
+        else:
+            await asyncio.sleep(2)
+        round += 1
+
+    # find our winner(s)
+    winning_score = max(scores.values())
+    winners = [key for key, value in scores.items() if value == winning_score]
+
+    winner_embed = Embed(
+        title="END OF TRIVIA GAME",
+        description=f"Congratulations, **{', '.join(winners)}**. You won!\n\nResults:\n{dict_to_ordered_string(scores)}",
+        color=16776960,
+    )
+
+    await ctx.send(embed=winner_embed)
 
 
 @bot.command()
@@ -114,7 +245,7 @@ async def image(ctx: Context, arg1: str, arg2: str = ""):
     config = get_config()
 
     if not arg2:
-        arg2 = config.get("OPENAI", "image_model", fallback="dall-e-2")
+        arg2 = config.get("OPENAI_GENERAL", "image_model", fallback="dall-e-2")
 
     # create image and get relevant information
     image_response = await client.images.generate(prompt=arg1, model=arg2)
@@ -160,7 +291,7 @@ async def vision(ctx: Context, *, arg: str = ""):
     image_url = ctx.message.attachments[0].url
 
     response = await client.chat.completions.create(
-        model=config.get("OPENAI", "vision_model", fallback="gpt-4o"),
+        model=config.get("OPENAI_GENERAL", "vision_model", fallback="gpt-4o"),
         messages=[
             {
                 "role": "user",
@@ -208,12 +339,12 @@ async def edit(ctx: Context, *, arg: str = ""):
             return
 
     image_response = await client.images.edit(
-        model=config.get("OPENAI", "image_edit_model", fallback="dall-e-2"),
+        model=config.get("OPENAI_GENERAL", "image_edit_model", fallback="dall-e-2"),
         image=open(image_paths[0], "rb"),
         mask=open(image_paths[1], "rb"),
         prompt=arg,
-        n=int(config.get("OPENAI", "num_image_edits", fallback="1")),
-        size=config.get("OPENAI", "image_edit_resolution", fallback="1024x1024"),
+        n=int(config.get("OPENAI_GENERAL", "num_image_edits", fallback="1")),
+        size=config.get("OPENAI_GENERAL", "image_edit_resolution", fallback="1024x1024"),
     )
 
     file_name = f"edit_{image_response.created}.png"
@@ -239,26 +370,30 @@ async def edit(ctx: Context, *, arg: str = ""):
     await ctx.send(file=file_upload, embed=embed)
 
 
-async def new_response(assistant: Assistant, thread_name: str, prompt: str = "", guild_id: str = ""):
+async def new_thread_response(
+    thread_name: str, prompt: str = "", guild_id: str = "", response_format: Union[str, dict] = "auto"
+):
 
-    thread = await get_thread(guild_id=guild_id, name=thread_name, client=client, assistant_id=assistant.id)
+    config = get_config()
+    assistant_id = config.get("OPENAI_ASSISTANTS", thread_name)
+
+    thread_id = await get_thread_id(guild_id=guild_id, name=thread_name, assistant_id=assistant_id, client=client)
 
     # add a message to the thread
     await client.beta.threads.messages.create(
-        thread_id=thread.id,
+        thread_id=thread_id,
         role="user",
         content=prompt,
     )
 
     # run the thread with the assistant and monitor the situation
-    run = await client.beta.threads.runs.create_and_poll(thread_id=thread.id, assistant_id=assistant.id)
+    run = await client.beta.threads.runs.create_and_poll(
+        thread_id=thread_id, assistant_id=assistant_id, response_format=response_format
+    )
 
-    while run.status != "completed":
-        time.sleep(0.25)
+    messages = await client.beta.threads.messages.list(thread_id=thread_id)
 
-    messages = await client.beta.threads.messages.list(thread_id=thread.id)
-
-    # the most recent message in the thread is from the assistant
+    # get the most recent response from the assistant
     response = messages.data[0]
 
     return response
@@ -267,10 +402,10 @@ async def new_response(assistant: Assistant, thread_name: str, prompt: str = "",
 async def generate_speech(guild_id: str, compartment: str, file_name: str, tts: str) -> str:
     config = get_config()
     async with client.audio.speech.with_streaming_response.create(
-        model=config.get("OPENAI", "speech_model", fallback="tts-1"),
-        voice=config.get("OPENAI", "voice", fallback="onyx"),
+        model=config.get("OPENAI_GENERAL", "speech_model", fallback="tts-1"),
+        voice=config.get("OPENAI_GENERAL", "voice", fallback="onyx"),
         input=tts,
-        response_format=config.get("OPENAI", "speech_file_format", fallback="wav"),
+        response_format=config.get("OPENAI_GENERAL", "speech_file_format", fallback="wav"),
     ) as speech:
         file_path = content_path(guild_id=guild_id, compartment=compartment, file_name=file_name)
         await speech.stream_to_file(file_path)
@@ -281,20 +416,12 @@ async def generate_speech(guild_id: str, compartment: str, file_name: str, tts: 
 async def gs_intro_song(guild_id: str, name: str):
     config = get_config()
     name = f"{name}_theme"
-    assistant = await get_assistant_by_name(guild_id=guild_id, name="gs_host", client=client)
-
-    # check if this is a new assistant
-    if not assistant.instructions:
-        assistant_instructions = config.get("PROMPTS", "gs_host")
-        assistant = await client.beta.assistants.update(
-            assistant_id=assistant.id, instructions=assistant_instructions, name="gs_host"
-        )
 
     prompt = config.get("PROMPTS", name)
 
     # openai api work
     ## generate the show intro text
-    response = await new_response(assistant=assistant, prompt=prompt, guild_id=guild_id, thread_name=name)
+    response = await new_thread_response(prompt=prompt, guild_id=guild_id, thread_name="gs_host")
 
     ## generate a speech wav
     tts = response.content[0].text.value
@@ -323,56 +450,32 @@ async def gs_intro_song(guild_id: str, name: str):
 
 async def would_you_rather(guild_id: str, topic: str):
     config = get_config()
-    assistant_name = f"rather_{topic}"
-    assistant = await get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
-
-    # check if this is a new assistant
-    if not assistant.instructions:
-        prompt = config.get("PROMPTS", assistant_name)
-        assistant_instructions = prompt
-        assistant = await client.beta.assistants.update(
-            assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
-        )
+    thread_name = f"rather_{topic}"
 
     new_hypothetical_prompt = config.get("PROMPTS", "new_hypothetical")
 
-    response = await new_response(
-        assistant=assistant, thread_name=assistant_name, prompt=new_hypothetical_prompt, guild_id=guild_id
-    )
+    response = await new_thread_response(thread_name=thread_name, prompt=new_hypothetical_prompt, guild_id=guild_id)
     tts = response.content[0].text.value
     file_path = await generate_speech(guild_id=guild_id, compartment="rather", tts=tts, file_name=f"{response.id}.wav")
 
     return tts, file_path
 
 
-async def quiz(guild_id: str, qa: str = ""):
+async def get_trivia_question(guild_id: str) -> dict:
     config = get_config()
-    assistant_name = f"quiz_{qa}"
+    trivia_prompt = config.get("PROMPTS", "trivia_game")
 
-    if qa == "question":
-        assistant = await get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
-        assistant_instructions = config.get("PROMPTS", assistant_name)
-        prompt = "Ask me a new question."
-    elif qa == "answer":
-        assistant = await get_assistant_by_name(guild_id=guild_id, name=assistant_name, client=client)
-        assistant_instructions = config.get("PROMPTS", assistant_name)
-        prompt = "Answer the question that was just asked with one word or phrase. "
-    else:
-        return "That is not a valid input.", False
-
-    # check if this is a new assistant
-    if not assistant.instructions:
-        assistant = await client.beta.assistants.update(
-            assistant_id=assistant.id, instructions=assistant_instructions, name=assistant_name
-        )
-
-    response = await new_response(assistant=assistant, thread_name="quiz", prompt=prompt, guild_id=guild_id)
-    tts = response.content[0].text.value
-    file_path = await generate_speech(
-        guild_id=guild_id, compartment="quiz", tts=tts, file_name=f"{qa}_{response.id}.wav"
+    response = await new_thread_response(
+        thread_name="trivia_game", prompt=trivia_prompt, guild_id=guild_id, response_format={"type": "json_object"}
     )
 
-    return tts, file_path
+    text_json = response.content[0].text.value
+
+    response_dict = json.loads(text_json)
+
+    # may be something to do, here.
+
+    return response_dict
 
 
 def content_path(guild_id: str, compartment: str, file_name: str):
@@ -387,6 +490,22 @@ def is_square_image(image_path: Path):
     with Image.open(image_path) as img:
         width, height = img.size
         return width == height
+
+
+def dict_to_ordered_string(data: dict) -> str:
+    # Sort the dictionary items by value in descending order
+    sorted_items = sorted(data.items(), key=lambda item: item[1], reverse=True)
+
+    # Format the sorted items into a numbered list
+    formatted_string = "\n".join([f"{i+1}. **{key}**: {value}" for i, (key, value) in enumerate(sorted_items)])
+
+    return formatted_string
+
+
+def get_config():
+    config = ConfigParser()
+    config.read("config.ini")
+    return config
 
 
 bot.run(os.getenv("DISCORD_BOT_KEY"))
