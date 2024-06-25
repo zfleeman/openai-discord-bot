@@ -1,5 +1,5 @@
-ffmpeg-python
-openai
-discord.py[voice]
-sqlmodel
-pillow
+ffmpeg-python==0.2.0
+openai==1.35.3
+discord.py[voice]==2.3.2
+sqlmodel==0.0.19
+pillow==10.3.0
