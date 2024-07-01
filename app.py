@@ -7,6 +7,7 @@ from urllib.request import urlopen, Request
 from typing import Union
 from collections import Counter
 from configparser import ConfigParser
+from random import randint
 
 import ffmpeg
 import discord
@@ -28,15 +29,39 @@ bot = Bot(command_prefix="!", intents=intents)
 
 
 @bot.command()
-async def ttsjoin(ctx: Context):
+async def join(ctx: Context, arg1: int = 0, arg2: int = 5):
+    """
+    joins a voice channel and optionally starts talking nonsense at a random-ish interval
+    :param arg1: the time to wait before speaking random nonsense (minutes)
+    :param arg2: the "modifier" to the time for added randomness
+    """
+
     if ctx.author.voice:
         voice = await ctx.author.voice.channel.connect()
     else:
         await ctx.send(f"{ctx.author} is not in a voice channel.")
 
+    if arg1:
+        arg1 = arg1 * 60
+        arg2 = arg2 * 60
+        low = arg1 - round(arg2 / 2)
+        low = low if low > 0 else 0
+        high = arg1 + arg2
+        interval = randint(low, high)
+
+        while True:
+
+            await asyncio.sleep(interval)
+
+            tts, path = await nonsense_talk(ctx.guild.id)
+            source = FFmpegOpusAudio(path)
+            player = voice.play(source)
+
+            await ctx.send(tts)
+
 
 @bot.command()
-async def ttsleave(ctx: Context):
+async def leave(ctx: Context):
     if ctx.voice_client:
         await ctx.guild.voice_client.disconnect()
 
@@ -455,6 +480,15 @@ async def would_you_rather(guild_id: str, topic: str):
     new_hypothetical_prompt = config.get("PROMPTS", "new_hypothetical")
 
     response = await new_thread_response(thread_name=thread_name, prompt=new_hypothetical_prompt, guild_id=guild_id)
+    tts = response.content[0].text.value
+    file_path = await generate_speech(guild_id=guild_id, compartment="rather", tts=tts, file_name=f"{response.id}.wav")
+
+    return tts, file_path
+
+
+async def nonsense_talk(guild_id: str):
+
+    response = await new_thread_response(thread_name="nonsense_talk", prompt="Let's hear it.", guild_id=guild_id)
     tts = response.content[0].text.value
     file_path = await generate_speech(guild_id=guild_id, compartment="rather", tts=tts, file_name=f"{response.id}.wav")
 
