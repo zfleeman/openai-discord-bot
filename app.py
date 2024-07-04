@@ -11,9 +11,8 @@ from discord import FFmpegOpusAudio, Embed, Intents
 from openai import AsyncOpenAI
 
 from ai_helpers import (
-    nonsense_talk,
     gs_intro_song,
-    would_you_rather,
+    speak_and_spell,
     get_config,
     get_trivia_question,
     dict_to_ordered_string,
@@ -24,7 +23,7 @@ from ai_helpers import (
 
 
 # OpenAI Client
-client = AsyncOpenAI()
+openai_client = AsyncOpenAI()
 
 # Bot Client
 intents = Intents.default()
@@ -53,9 +52,17 @@ async def join(ctx: Context, arg1: int = 0, arg2: int = 5):
         high = arg1 + arg2
         interval = randint(low, high)
 
-        while True:
+        config = get_config()
+        prompt = config.get("PROMPTS", "nonsense_talk", fallback="Let's hear it.")
 
-            tts, file_path = await nonsense_talk(ctx.guild.id)
+        while True:
+            tts, file_path = await speak_and_spell(
+                thread_name="nonsense_talk",
+                prompt=prompt,
+                compartment="nonsense_talk",
+                guild_id=ctx.guild.id,
+                openai_client=openai_client,
+            )
             source = FFmpegOpusAudio(file_path)
             player = voice.play(source)
 
@@ -77,7 +84,7 @@ async def theme(ctx: Context, arg1: str):
     """
 
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    tts, file_path = await gs_intro_song(ctx.guild.id, arg1)
+    tts, file_path = await gs_intro_song(ctx.guild.id, arg1, openai_client=openai_client)
     source = FFmpegOpusAudio(file_path)
     player = voice.play(source)
     await ctx.send(tts)
@@ -92,7 +99,18 @@ async def rather(ctx: Context, arg1: str = "normal"):
 
     arg1 = arg1.lower()
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    tts, file_path = await would_you_rather(guild_id=ctx.guild.id, topic=arg1)
+    config = get_config()
+    thread_name = f"rather_{arg1}"
+
+    new_hypothetical_prompt = config.get("PROMPTS", "new_hypothetical")
+
+    tts, file_path = await speak_and_spell(
+        thread_name=thread_name,
+        prompt=new_hypothetical_prompt,
+        guild_id=ctx.guild.id,
+        compartment="rather",
+        openai_client=openai_client,
+    )
     source = FFmpegOpusAudio(file_path)
     player = voice.play(source)
     await ctx.send(tts)
@@ -141,7 +159,7 @@ async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30, arg3: int = 0):
     scores = {}
     round = 0
     while round < arg1:
-        response_dict = await get_trivia_question(guild_id=ctx.guild.id)
+        response_dict = await get_trivia_question(guild_id=ctx.guild.id, openai_client=openai_client)
 
         question = response_dict.get("question")
         answer = response_dict.get("answer")
@@ -257,7 +275,9 @@ async def say(ctx: Context, *, arg: str = ""):
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     file_name = f"{ts}.wav"
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    path = await generate_speech(guild_id=ctx.guild.id, compartment="say", file_name=file_name, tts=arg)
+    path = await generate_speech(
+        guild_id=ctx.guild.id, compartment="say", file_name=file_name, tts=arg, openai_client=openai_client
+    )
     source = FFmpegOpusAudio(path)
     player = voice.play(source)
 
@@ -276,7 +296,7 @@ async def image(ctx: Context, arg1: str, arg2: str = ""):
         arg2 = config.get("OPENAI_GENERAL", "image_model", fallback="dall-e-2")
 
     # create image and get relevant information
-    image_response = await client.images.generate(prompt=arg1, model=arg2)
+    image_response = await openai_client.images.generate(prompt=arg1, model=arg2)
     url = image_response.data[0].url
     revised_prompt = image_response.data[0].revised_prompt
 
@@ -318,7 +338,7 @@ async def vision(ctx: Context, *, arg: str = ""):
 
     image_url = ctx.message.attachments[0].url
 
-    response = await client.chat.completions.create(
+    response = await openai_client.chat.completions.create(
         model=config.get("OPENAI_GENERAL", "vision_model", fallback="gpt-4o"),
         messages=[
             {
@@ -366,7 +386,7 @@ async def edit(ctx: Context, *, arg: str = ""):
             await ctx.send("Images used in OpenAI's Image Edit mode need to be square.")
             return
 
-    image_response = await client.images.edit(
+    image_response = await openai_client.images.edit(
         model=config.get("OPENAI_GENERAL", "image_edit_model", fallback="dall-e-2"),
         image=open(image_paths[0], "rb"),
         mask=open(image_paths[1], "rb"),

@@ -11,10 +11,6 @@ from db_utils import get_thread_id
 from openai import AsyncOpenAI
 
 
-# OpenAI Client
-client = AsyncOpenAI()
-
-
 def get_config():
     config = ConfigParser()
     config.read("config.ini")
@@ -22,27 +18,31 @@ def get_config():
 
 
 async def new_thread_response(
-    thread_name: str, prompt: str = "", guild_id: str = "", response_format: Union[str, dict] = "auto"
+    thread_name: str,
+    prompt: str = "",
+    guild_id: str = "",
+    response_format: Union[str, dict] = "auto",
+    openai_client: AsyncOpenAI = AsyncOpenAI(),
 ):
 
     config = get_config()
     assistant_id = config.get("OPENAI_ASSISTANTS", thread_name)
 
-    thread_id = await get_thread_id(guild_id=guild_id, name=thread_name, assistant_id=assistant_id, client=client)
+    thread_id = await get_thread_id(guild_id=guild_id, name=thread_name, openai_client=openai_client)
 
     # add a message to the thread
-    await client.beta.threads.messages.create(
+    await openai_client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
         content=prompt,
     )
 
     # run the thread with the assistant and monitor the situation
-    run = await client.beta.threads.runs.create_and_poll(
+    run = await openai_client.beta.threads.runs.create_and_poll(
         thread_id=thread_id, assistant_id=assistant_id, response_format=response_format
     )
 
-    messages = await client.beta.threads.messages.list(thread_id=thread_id)
+    messages = await openai_client.beta.threads.messages.list(thread_id=thread_id)
 
     # get the most recent response from the assistant
     response = messages.data[0]
@@ -50,9 +50,11 @@ async def new_thread_response(
     return response
 
 
-async def generate_speech(guild_id: str, compartment: str, file_name: str, tts: str) -> Path:
+async def generate_speech(
+    guild_id: str, compartment: str, file_name: str, tts: str, openai_client: AsyncOpenAI = AsyncOpenAI()
+) -> Path:
     config = get_config()
-    async with client.audio.speech.with_streaming_response.create(
+    async with openai_client.audio.speech.with_streaming_response.create(
         model=config.get("OPENAI_GENERAL", "speech_model", fallback="tts-1"),
         voice=config.get("OPENAI_GENERAL", "voice", fallback="onyx"),
         input=tts,
@@ -65,24 +67,32 @@ async def generate_speech(guild_id: str, compartment: str, file_name: str, tts: 
 
 
 async def speak_and_spell(
-    thread_name: str, prompt: str, guild_id: str, compartment: str = "default"
+    thread_name: str,
+    prompt: str,
+    guild_id: str,
+    compartment: str = "default",
+    openai_client: AsyncOpenAI = AsyncOpenAI(),
 ) -> Tuple[str, Path]:
-    response = await new_thread_response(thread_name=thread_name, prompt=prompt, guild_id=guild_id)
+    response = await new_thread_response(
+        thread_name=thread_name, prompt=prompt, guild_id=guild_id, openai_client=openai_client
+    )
     tts = response.content[0].text.value
     file_path = await generate_speech(
-        guild_id=guild_id, compartment=compartment, tts=tts, file_name=f"{response.id}.wav"
+        guild_id=guild_id, compartment=compartment, tts=tts, file_name=f"{response.id}.wav", openai_client=openai_client
     )
 
     return tts, file_path
 
 
-async def gs_intro_song(guild_id: str, name: str):
+async def gs_intro_song(guild_id: str, name: str, openai_client: AsyncOpenAI = AsyncOpenAI()):
     config = get_config()
     name = f"{name}_theme"
 
     prompt = config.get("PROMPTS", name)
 
-    tts, file_path = await speak_and_spell(thread_name="gs_host", prompt=prompt, guild_id=guild_id, compartment="theme")
+    tts, file_path = await speak_and_spell(
+        thread_name="gs_host", prompt=prompt, guild_id=guild_id, compartment="theme", openai_client=openai_client
+    )
 
     # ffmpeg work to combine streams
     ## load both audio files
@@ -103,32 +113,16 @@ async def gs_intro_song(guild_id: str, name: str):
     return tts, ouput_file
 
 
-async def would_you_rather(guild_id: str, topic: str):
-    config = get_config()
-    thread_name = f"rather_{topic}"
-
-    new_hypothetical_prompt = config.get("PROMPTS", "new_hypothetical")
-
-    return await speak_and_spell(
-        thread_name=thread_name, prompt=new_hypothetical_prompt, guild_id=guild_id, compartment="rather"
-    )
-
-
-async def nonsense_talk(guild_id: str):
-    config = get_config()
-    prompt = config.get("PROMPTS", "nonsense_talk", fallback="Let's hear it.")
-
-    return await speak_and_spell(
-        thread_name="nonsense_talk", prompt=prompt, compartment="nonsense_talk", guild_id=guild_id
-    )
-
-
-async def get_trivia_question(guild_id: str) -> dict:
+async def get_trivia_question(guild_id: str, openai_client: AsyncOpenAI = AsyncOpenAI()) -> dict:
     config = get_config()
     trivia_prompt = config.get("PROMPTS", "trivia_game")
 
     response = await new_thread_response(
-        thread_name="trivia_game", prompt=trivia_prompt, guild_id=guild_id, response_format={"type": "json_object"}
+        thread_name="trivia_game",
+        prompt=trivia_prompt,
+        guild_id=guild_id,
+        response_format={"type": "json_object"},
+        openai_client=openai_client,
     )
 
     text_json = response.content[0].text.value
