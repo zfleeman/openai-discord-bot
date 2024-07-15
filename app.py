@@ -1,6 +1,6 @@
 import asyncio
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import Counter
 from random import randint
 from urllib.request import urlopen, Request
@@ -71,9 +71,22 @@ async def join(ctx: Context, arg1: int = 0, arg2: int = 5):
 
 
 @bot.command()
-async def leave(ctx: Context):
+async def leave(ctx: Context, arg1: int = 0):
+    """
+    Leave a voice call and optionally delete everything shared by the bot in 
+    :param arg1: amount of minutes to look back for deletion
+    """
     if ctx.voice_client:
         await ctx.guild.voice_client.disconnect()
+
+    if arg1:
+        config = get_config()
+        after_time = datetime.now() - timedelta(minutes=arg1)
+        messages = ctx.channel.history(after=after_time)
+
+        async for message in messages:
+            if message.author.id == int(config.get("DISCORD", "bot_id")):
+                await message.delete()
 
 
 @bot.command()
