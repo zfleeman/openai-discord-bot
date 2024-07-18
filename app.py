@@ -1,25 +1,29 @@
-import os
-import json
 import asyncio
-from pathlib import Path
-from datetime import datetime
-from urllib.request import urlopen, Request
-from typing import Union
+import os
+from datetime import datetime, timedelta
 from collections import Counter
-from configparser import ConfigParser
+from random import randint
+from urllib.request import urlopen, Request
 
-import ffmpeg
 import discord
 from discord.ext.commands import Context, Bot
 from discord import FFmpegOpusAudio, Embed, Intents
 from openai import AsyncOpenAI
-from PIL import Image
 
-from db_utils import get_thread_id
+from ai_helpers import (
+    gs_intro_song,
+    speak_and_spell,
+    get_config,
+    get_trivia_question,
+    dict_to_ordered_string,
+    generate_speech,
+    content_path,
+    is_square_image,
+)
 
 
 # OpenAI Client
-client = AsyncOpenAI()
+openai_client = AsyncOpenAI()
 
 # Bot Client
 intents = Intents.default()
@@ -28,17 +32,61 @@ bot = Bot(command_prefix="!", intents=intents)
 
 
 @bot.command()
-async def ttsjoin(ctx: Context):
+async def join(ctx: Context, arg1: int = 0, arg2: int = 5):
+    """
+    joins a voice channel and optionally starts talking nonsense at a random-ish interval
+    :param arg1: the time to wait before speaking random nonsense (minutes)
+    :param arg2: the "modifier" to the time for added randomness
+    """
+
     if ctx.author.voice:
         voice = await ctx.author.voice.channel.connect()
     else:
         await ctx.send(f"{ctx.author} is not in a voice channel.")
 
+    if arg1:
+        arg1 = arg1 * 60
+        arg2 = arg2 * 60
+        low = arg1 - round(arg2 / 2)
+        low = low if low > 0 else 0
+        high = arg1 + arg2
+        interval = randint(low, high)
+
+        config = get_config()
+        prompt = config.get("PROMPTS", "nonsense_talk", fallback="Let's hear it.")
+
+        while True:
+            tts, file_path = await speak_and_spell(
+                thread_name="nonsense_talk",
+                prompt=prompt,
+                compartment="nonsense_talk",
+                guild_id=ctx.guild.id,
+                openai_client=openai_client,
+            )
+            source = FFmpegOpusAudio(file_path)
+            player = voice.play(source)
+
+            await ctx.send(tts)
+            await asyncio.sleep(interval)
+
 
 @bot.command()
-async def ttsleave(ctx: Context):
+async def leave(ctx: Context, arg1: int = 0):
+    """
+    Leave a voice call and optionally delete everything shared by the bot in 
+    :param arg1: amount of minutes to look back for deletion
+    """
     if ctx.voice_client:
         await ctx.guild.voice_client.disconnect()
+
+    if arg1:
+        config = get_config()
+        after_time = datetime.now() - timedelta(minutes=arg1)
+        messages = ctx.channel.history(after=after_time)
+
+        async for message in messages:
+            if message.author.id == int(config.get("DISCORD", "bot_id")):
+                await message.delete()
 
 
 @bot.command()
@@ -49,8 +97,8 @@ async def theme(ctx: Context, arg1: str):
     """
 
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    tts, path = await gs_intro_song(ctx.guild.id, arg1)
-    source = FFmpegOpusAudio(path)
+    tts, file_path = await gs_intro_song(ctx.guild.id, arg1, openai_client=openai_client)
+    source = FFmpegOpusAudio(file_path)
     player = voice.play(source)
     await ctx.send(tts)
 
@@ -64,8 +112,19 @@ async def rather(ctx: Context, arg1: str = "normal"):
 
     arg1 = arg1.lower()
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    tts, path = await would_you_rather(guild_id=ctx.guild.id, topic=arg1)
-    source = FFmpegOpusAudio(path)
+    config = get_config()
+    thread_name = f"rather_{arg1}"
+
+    new_hypothetical_prompt = config.get("PROMPTS", "new_hypothetical")
+
+    tts, file_path = await speak_and_spell(
+        thread_name=thread_name,
+        prompt=new_hypothetical_prompt,
+        guild_id=ctx.guild.id,
+        compartment="rather",
+        openai_client=openai_client,
+    )
+    source = FFmpegOpusAudio(file_path)
     player = voice.play(source)
     await ctx.send(tts)
 
@@ -113,7 +172,7 @@ async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30, arg3: int = 0):
     scores = {}
     round = 0
     while round < arg1:
-        response_dict = await get_trivia_question(guild_id=ctx.guild.id)
+        response_dict = await get_trivia_question(guild_id=ctx.guild.id, openai_client=openai_client)
 
         question = response_dict.get("question")
         answer = response_dict.get("answer")
@@ -229,7 +288,9 @@ async def say(ctx: Context, *, arg: str = ""):
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     file_name = f"{ts}.wav"
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    path = await generate_speech(guild_id=ctx.guild.id, compartment="say", file_name=file_name, tts=arg)
+    path = await generate_speech(
+        guild_id=ctx.guild.id, compartment="say", file_name=file_name, tts=arg, openai_client=openai_client
+    )
     source = FFmpegOpusAudio(path)
     player = voice.play(source)
 
@@ -248,7 +309,7 @@ async def image(ctx: Context, arg1: str, arg2: str = ""):
         arg2 = config.get("OPENAI_GENERAL", "image_model", fallback="dall-e-2")
 
     # create image and get relevant information
-    image_response = await client.images.generate(prompt=arg1, model=arg2)
+    image_response = await openai_client.images.generate(prompt=arg1, model=arg2)
     url = image_response.data[0].url
     revised_prompt = image_response.data[0].revised_prompt
 
@@ -290,7 +351,7 @@ async def vision(ctx: Context, *, arg: str = ""):
 
     image_url = ctx.message.attachments[0].url
 
-    response = await client.chat.completions.create(
+    response = await openai_client.chat.completions.create(
         model=config.get("OPENAI_GENERAL", "vision_model", fallback="gpt-4o"),
         messages=[
             {
@@ -338,7 +399,7 @@ async def edit(ctx: Context, *, arg: str = ""):
             await ctx.send("Images used in OpenAI's Image Edit mode need to be square.")
             return
 
-    image_response = await client.images.edit(
+    image_response = await openai_client.images.edit(
         model=config.get("OPENAI_GENERAL", "image_edit_model", fallback="dall-e-2"),
         image=open(image_paths[0], "rb"),
         mask=open(image_paths[1], "rb"),
@@ -368,144 +429,6 @@ async def edit(ctx: Context, *, arg: str = ""):
     file_upload = discord.File(path, filename=file_name)
 
     await ctx.send(file=file_upload, embed=embed)
-
-
-async def new_thread_response(
-    thread_name: str, prompt: str = "", guild_id: str = "", response_format: Union[str, dict] = "auto"
-):
-
-    config = get_config()
-    assistant_id = config.get("OPENAI_ASSISTANTS", thread_name)
-
-    thread_id = await get_thread_id(guild_id=guild_id, name=thread_name, assistant_id=assistant_id, client=client)
-
-    # add a message to the thread
-    await client.beta.threads.messages.create(
-        thread_id=thread_id,
-        role="user",
-        content=prompt,
-    )
-
-    # run the thread with the assistant and monitor the situation
-    run = await client.beta.threads.runs.create_and_poll(
-        thread_id=thread_id, assistant_id=assistant_id, response_format=response_format
-    )
-
-    messages = await client.beta.threads.messages.list(thread_id=thread_id)
-
-    # get the most recent response from the assistant
-    response = messages.data[0]
-
-    return response
-
-
-async def generate_speech(guild_id: str, compartment: str, file_name: str, tts: str) -> str:
-    config = get_config()
-    async with client.audio.speech.with_streaming_response.create(
-        model=config.get("OPENAI_GENERAL", "speech_model", fallback="tts-1"),
-        voice=config.get("OPENAI_GENERAL", "voice", fallback="onyx"),
-        input=tts,
-        response_format=config.get("OPENAI_GENERAL", "speech_file_format", fallback="wav"),
-    ) as speech:
-        file_path = content_path(guild_id=guild_id, compartment=compartment, file_name=file_name)
-        await speech.stream_to_file(file_path)
-
-    return file_path
-
-
-async def gs_intro_song(guild_id: str, name: str):
-    config = get_config()
-    name = f"{name}_theme"
-
-    prompt = config.get("PROMPTS", name)
-
-    # openai api work
-    ## generate the show intro text
-    response = await new_thread_response(prompt=prompt, guild_id=guild_id, thread_name="gs_host")
-
-    ## generate a speech wav
-    tts = response.content[0].text.value
-    file_path = await generate_speech(
-        guild_id=guild_id, compartment="theme", tts=tts, file_name=f"{name}_{response.id}.wav"
-    )
-
-    # ffmpeg work to combine streams
-    ## load both audio files
-    theme_song = ffmpeg.input("gameshow.mp3").audio
-    words = ffmpeg.input(file_path).audio
-
-    ## adjust volumes
-    theme_song = theme_song.filter("volume", 0.25)
-    words = words.filter("volume", 3)
-
-    ## merge and output
-    dt_string = datetime.now().strftime("%Y%m%d%H%M%S")
-    ouput_file = Path(f"intro_{dt_string}.wav").resolve()
-    merged_audio = ffmpeg.filter((theme_song, words), "amix")
-    out = ffmpeg.output(merged_audio, str(ouput_file)).overwrite_output()
-    out.run(quiet=True)
-
-    return tts, ouput_file
-
-
-async def would_you_rather(guild_id: str, topic: str):
-    config = get_config()
-    thread_name = f"rather_{topic}"
-
-    new_hypothetical_prompt = config.get("PROMPTS", "new_hypothetical")
-
-    response = await new_thread_response(thread_name=thread_name, prompt=new_hypothetical_prompt, guild_id=guild_id)
-    tts = response.content[0].text.value
-    file_path = await generate_speech(guild_id=guild_id, compartment="rather", tts=tts, file_name=f"{response.id}.wav")
-
-    return tts, file_path
-
-
-async def get_trivia_question(guild_id: str) -> dict:
-    config = get_config()
-    trivia_prompt = config.get("PROMPTS", "trivia_game")
-
-    response = await new_thread_response(
-        thread_name="trivia_game", prompt=trivia_prompt, guild_id=guild_id, response_format={"type": "json_object"}
-    )
-
-    text_json = response.content[0].text.value
-
-    response_dict = json.loads(text_json)
-
-    # may be something to do, here.
-
-    return response_dict
-
-
-def content_path(guild_id: str, compartment: str, file_name: str):
-    config = get_config()
-    ts = datetime.now().strftime(config.get("GENERAL", "session_strftime", fallback="dall-e-2"))
-    dir_path = Path(f"generated_content/guild_{guild_id}/{ts}/{compartment}")
-    dir_path.mkdir(parents=True, exist_ok=True)
-    return dir_path / file_name
-
-
-def is_square_image(image_path: Path):
-    with Image.open(image_path) as img:
-        width, height = img.size
-        return width == height
-
-
-def dict_to_ordered_string(data: dict) -> str:
-    # Sort the dictionary items by value in descending order
-    sorted_items = sorted(data.items(), key=lambda item: item[1], reverse=True)
-
-    # Format the sorted items into a numbered list
-    formatted_string = "\n".join([f"{i+1}. **{key}**: {value}" for i, (key, value) in enumerate(sorted_items)])
-
-    return formatted_string
-
-
-def get_config():
-    config = ConfigParser()
-    config.read("config.ini")
-    return config
 
 
 bot.run(os.getenv("DISCORD_BOT_KEY"))

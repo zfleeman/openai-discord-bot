@@ -19,26 +19,18 @@ class Thread(SQLModel, table=True):
     guild_id: str
     name: str
     created_at: datetime
-    assistant_id: str
 
 
-async def get_thread_id(guild_id: str, assistant_id: str, name: str, client: AsyncOpenAI = AsyncOpenAI()) -> str:
+async def get_thread_id(guild_id: str, name: str, openai_client: AsyncOpenAI = AsyncOpenAI()) -> str:
     with get_session() as session:
-        statement = (
-            select(Thread)
-            .where(Thread.name == name)
-            .where(Thread.guild_id == guild_id)
-            .where(Thread.assistant_id == assistant_id)
-        )
+        statement = select(Thread).where(Thread.name == name).where(Thread.guild_id == guild_id)
         results = session.exec(statement)
         thread_record = results.first()
 
         if not thread_record:
-            thread = await client.beta.threads.create()
+            thread = await openai_client.beta.threads.create()
             # new record
-            thread_record = Thread(
-                id=thread.id, guild_id=guild_id, name=name, assistant_id=assistant_id, created_at=datetime.now()
-            )
+            thread_record = Thread(id=thread.id, guild_id=guild_id, name=name, created_at=datetime.now())
             session.add(thread_record)
             session.commit()
 
