@@ -34,9 +34,7 @@ bot = Bot(command_prefix="!", intents=intents)
 @bot.command()
 async def join(ctx: Context, arg1: int = 0, arg2: int = 5):
     """
-    joins a voice channel and optionally starts talking nonsense at a random-ish interval
-    :param arg1: the time to wait before speaking random nonsense (minutes)
-    :param arg2: the "modifier" to the time for added randomness
+    joins the voice channel the command sender is in
     """
 
     if ctx.author.voice:
@@ -44,36 +42,12 @@ async def join(ctx: Context, arg1: int = 0, arg2: int = 5):
     else:
         await ctx.send(f"{ctx.author} is not in a voice channel.")
 
-    if arg1:
-        arg1 = arg1 * 60
-        arg2 = arg2 * 60
-        low = arg1 - round(arg2 / 2)
-        low = low if low > 0 else 0
-        high = arg1 + arg2
-        interval = randint(low, high)
-
-        config = get_config()
-        prompt = config.get("PROMPTS", "nonsense_talk", fallback="Let's hear it.")
-
-        while True:
-            tts, file_path = await speak_and_spell(
-                thread_name="nonsense_talk",
-                prompt=prompt,
-                compartment="nonsense_talk",
-                guild_id=ctx.guild.id,
-                openai_client=openai_client,
-            )
-            source = FFmpegOpusAudio(file_path)
-            player = voice.play(source)
-
-            await ctx.send(tts)
-            await asyncio.sleep(interval)
-
 
 @bot.command()
 async def leave(ctx: Context, arg1: int = 0):
     """
-    Leave a voice call and optionally delete everything shared by the bot in 
+    Leave a voice call and optionally delete everything shared by the bot in the channel
+    in which this is called
     :param arg1: amount of minutes to look back for deletion
     """
     if ctx.voice_client:
@@ -87,6 +61,45 @@ async def leave(ctx: Context, arg1: int = 0):
         async for message in messages:
             if message.author.id == int(config.get("DISCORD", "bot_id")):
                 await message.delete()
+
+
+@bot.command()
+async def talk(ctx: Context, arg1: str = "nonsense", arg2: float = 0, arg3: float = 5):
+    """
+    Start a talk loop
+    :param arg1: the topic for discussion. Options: "nonsense" or "quotes"
+    :param arg2: the time to wait before speaking random nonsense (minutes)
+    :param arg3: the "modifier" to the time for added randomness
+    """
+
+    arg2 = arg2 * 60
+    arg3 = arg3 * 60
+    low = round(arg2) - round(arg3 / 2)
+    low = low if low > 0 else 0
+    high = arg2 + arg3
+    interval = randint(low, high)
+
+    config = get_config()
+    prompt = config.get("PROMPTS", arg1)
+
+    while True:
+
+        if voice := discord.utils.get(bot.voice_clients, guild=ctx.guild):
+
+            tts, file_path = await speak_and_spell(
+                thread_name=arg1,
+                prompt=prompt,
+                compartment="talk",
+                guild_id=ctx.guild.id,
+                openai_client=openai_client,
+            )
+            source = FFmpegOpusAudio(file_path)
+            player = voice.play(source)
+
+            await ctx.send(tts)
+            await asyncio.sleep(interval)
+        else:
+            break
 
 
 @bot.command()
