@@ -44,23 +44,36 @@ async def join(ctx: Context, arg1: int = 0, arg2: int = 5):
 
 
 @bot.command()
-async def leave(ctx: Context, arg1: int = 0):
+async def leave(ctx: Context):
     """
-    Leave a voice call and optionally delete everything shared by the bot in the channel
-    in which this is called
-    :param arg1: amount of minutes to look back for deletion
+    Leave a voice call
     """
     if ctx.voice_client:
         await ctx.guild.voice_client.disconnect()
 
-    if arg1:
-        config = get_config()
-        after_time = datetime.now() - timedelta(minutes=arg1)
-        messages = ctx.channel.history(after=after_time)
 
-        async for message in messages:
-            if message.author.id == int(config.get("DISCORD", "bot_id")):
-                await message.delete()
+@bot.command()
+async def clean(ctx: Context, arg1: int):
+    """
+    delete everything shared by the bot in the channel in which this is called
+    :param arg1: amount of minutes to look back for deletion
+    """
+    config = get_config()
+
+    if not arg1:
+        await ctx.send("You must provide a number after the `!clean` command.")
+        return
+
+    after_time = datetime.now() - timedelta(minutes=arg1)
+    messages = ctx.channel.history(after=after_time)
+
+    bot_id = bot.user.id
+    sleep_seconds = float(config.get("GENERAL", "clean_sleep", fallback=0.25))
+
+    async for message in messages:
+        if message.author.id == bot_id:
+            await asyncio.sleep(sleep_seconds)
+            await message.delete()
 
 
 @bot.command()
