@@ -1,7 +1,8 @@
 import asyncio
 import os
-from datetime import datetime, timedelta
 from collections import Counter
+from datetime import datetime, timedelta
+from pathlib import Path
 from random import randint
 from urllib.request import urlopen, Request
 
@@ -28,11 +29,34 @@ openai_client = AsyncOpenAI()
 # Bot Client
 intents = Intents.default()
 intents.message_content = True
-bot = Bot(command_prefix="!", intents=intents)
+bot = Bot(command_prefix="!", intents=intents, help_command=None)
 
 
 @bot.command()
-async def join(ctx: Context, arg1: int = 0, arg2: int = 5):
+async def help(ctx: Context, arg1: str = ""):
+
+    folder = Path("docs")
+    files_without_suffix = [file.stem for file in folder.iterdir() if file.is_file()]
+
+    if not arg1:
+        await ctx.send(
+            f"You can call `!help` on the following commands: `{'`, `'.join(files_without_suffix)}`\nFor example: `!help {files_without_suffix[0]}`"
+        )
+        return
+    elif arg1 not in files_without_suffix:
+        await ctx.send(f"`!{arg1}` is not a recognized command. Get real.")
+        return
+
+    file = folder / f"{arg1}.md"
+    help_text = file.read_text()
+
+    embed = Embed(color=15844367, title=f"`!{arg1}` Helper Text", description=help_text)
+
+    await ctx.send(embed=embed)
+
+
+@bot.command()
+async def join(ctx: Context):
     """
     joins the voice channel the command sender is in
     """
