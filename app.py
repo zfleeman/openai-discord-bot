@@ -101,7 +101,7 @@ async def clean(ctx: Context, arg1: int):
 
 
 @bot.command()
-async def talk(ctx: Context, arg1: str = "nonsense", arg2: float = 0, arg3: float = 5):
+async def talk(ctx: Context, arg1: str = "nonsense", arg2: float = 5):
     """
     Start a talk loop
     :param arg1: the topic for discussion. Options: "nonsense" or "quotes"
@@ -109,12 +109,7 @@ async def talk(ctx: Context, arg1: str = "nonsense", arg2: float = 0, arg3: floa
     :param arg3: the "modifier" to the time for added randomness
     """
 
-    arg2 = arg2 * 60
-    arg3 = arg3 * 60
-    low = round(arg2) - round(arg3 / 2)
-    low = low if low > 0 else 0
-    high = arg2 + arg3
-    interval = randint(low, high)
+    interval = arg2 * 60
 
     config = get_config()
     prompt = config.get("PROMPTS", arg1)
@@ -417,7 +412,7 @@ async def vision(ctx: Context, *, arg: str = ""):
 
 
 @bot.command()
-async def edit(ctx: Context, *, arg: str = ""):
+async def edit(ctx: Context, *, arg: str):
     """
     Edit an image using the original image and its mask
     :param arg: A prompt to be used when describing the desired image edit

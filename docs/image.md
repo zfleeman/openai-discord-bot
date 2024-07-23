@@ -1,15 +1,9 @@
-# Bot Image Command
-
-This bot includes a command to generate an image based on a user-provided prompt and model.
-
-## Command: `!image`
-
-### Description
+## `!image <prompt> [model]`
 
 The `!image` command generates an image using the specified prompt and model, then sends the generated image in the channel.
 
-### Usage
+The prompt must be surrounded in quotes.
 
-```plaintext
-!image <prompt> [model]
-```
+### Model Choices
+- `dall-e-2` (default)
+- `dall-e-3`
