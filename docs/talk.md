@@ -1,4 +1,6 @@
-## `!talk [topic] [minutes]`
+```plaintext
+!talk [topic] [minutes]
+```
 
 The `!talk` command starts a loop where the bot will continuously send messages and play audio based on a specified topic. The bot will pause between messages for the specified amount of minutes.
 

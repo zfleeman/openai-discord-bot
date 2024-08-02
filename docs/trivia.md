@@ -1,4 +1,6 @@
-## `!trivia [number_of_questions] [answer_time] [start_delay]`
+```plaintext
+!trivia [number_of_questions] [answer_time] [start_delay]
+```
 
 The `!trivia` command initiates a trivia game in the channel, asking a specified number of questions and waiting a set amount of time before sharing the answers. Optionally, a delay before starting the game can be set. If a delay is set, an `@here` alert will be added to the message.
 

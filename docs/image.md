@@ -1,4 +1,6 @@
-## `!image <prompt> [model]`
+```plaintext
+!image <prompt> [model]
+```
 
 The `!image` command generates an image using the specified prompt and model, then sends the generated image in the channel.
 
