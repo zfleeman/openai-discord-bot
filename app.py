@@ -50,7 +50,7 @@ async def help(ctx: Context, arg1: str = ""):
     file = folder / f"{arg1}.md"
     help_text = file.read_text()
 
-    embed = Embed(color=15844367, title=f"`!{arg1}` Helper Text", description=help_text)
+    embed = Embed(color=15844367, description=help_text)
 
     await ctx.send(embed=embed)
 
