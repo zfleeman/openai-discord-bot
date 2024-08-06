@@ -1,5 +1,5 @@
 ```plaintext
-!say <text>
+!say <text_to_speech>
 ```
 The `!say` command makes the bot speak whatever text is provided after the command. The text is converted to speech and played in the voice channel the bot is connected to.
 

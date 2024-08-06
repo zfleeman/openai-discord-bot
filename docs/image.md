@@ -1,5 +1,5 @@
 ```plaintext
-!image <prompt> [model]
+!image <image_prompt> [image_model]
 ```
 The `!image` command generates an image using the specified prompt and model, then sends the generated image in the channel.
 
