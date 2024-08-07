@@ -393,7 +393,12 @@ async def vision(ctx: Context, *, vision_prompt: str = ""):
     if not vision_prompt:
         vision_prompt = config.get("PROMPTS", "vision_prompt", fallback="What is in this image?")
 
-    image_url = ctx.message.attachments[0].url
+    try:
+        image_url = ctx.message.attachments[0].url
+    except IndexError:
+        await ctx.send("```plaintext\nError: Unable to retrieve the image attachment. Did you attach an image?\n```")
+        await ctx.invoke(bot.get_command("help"), ctx.command.name)
+        return
 
     response = await openai_client.chat.completions.create(
         model=config.get("OPENAI_GENERAL", "vision_model", fallback="gpt-4o"),
@@ -418,7 +423,13 @@ async def edit(ctx: Context, *, edit_prompt: str):
     """
 
     config = get_config()
-    images = [(ctx.message.attachments[0].url, "original"), (ctx.message.attachments[1].url, "mask")]
+
+    try:
+        images = [(ctx.message.attachments[0].url, "original"), (ctx.message.attachments[1].url, "mask")]
+    except IndexError:
+        await ctx.send("```plaintext\nError: Unable to retrieve the image attachments. Did you attach images?\n```")
+        await ctx.invoke(bot.get_command("help"), ctx.command.name)
+        return
 
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
 
