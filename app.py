@@ -477,18 +477,30 @@ async def edit(ctx: Context, *, edit_prompt: str):
 
 @bot.event
 async def on_command_error(ctx: Context, error: CommandError):
+    """
+    Bot event handler for a user command error.
+    """
+
     if isinstance(error, CommandNotFound):
-        await ctx.send("This is not a supported command. Type `!help` to see a list of available commands.")
+        # Not a command
+        await ctx.send("This is not a supported command.")
+        await ctx.invoke(bot.get_command("help"))
+
     elif isinstance(error, MissingRequiredArgument):
+        # Missing required argument
         await ctx.send(f"Missing required argument: `<{error.param.name}>`")
         await ctx.invoke(bot.get_command("help"), ctx.command.name)
+
     elif isinstance(error, BadArgument):
+        # Type error (gave int when expected string or the like)
         await ctx.send(
             "Invalid argument type. Please provide the correct type (string, integer, float, ...) of arguments."
         )
         await ctx.invoke(bot.get_command("help"), ctx.command.name)
+
     else:
-        await ctx.send("An error occurred.")
+        # Unknown error
+        await ctx.send(f"An error occurred.\n```plaintext\n{error}\n```")
 
 
 bot.run(os.getenv("DISCORD_BOT_KEY"))
