@@ -3,11 +3,19 @@ import os
 from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
-from random import randint
+from typing import Literal
 from urllib.request import urlopen, Request
 
 import discord
-from discord.ext.commands import Context, Bot, CommandNotFound, MissingRequiredArgument, CommandError, BadArgument
+from discord.ext.commands import (
+    Context,
+    Bot,
+    CommandNotFound,
+    MissingRequiredArgument,
+    CommandError,
+    BadArgument,
+    BadLiteralArgument,
+)
 from discord import FFmpegOpusAudio, Embed, Intents
 from openai import AsyncOpenAI
 
@@ -97,10 +105,10 @@ async def clean(ctx: Context, number_of_minutes: int):
 
 
 @bot.command()
-async def talk(ctx: Context, topic: str = "nonsense", minutes: float = 5):
+async def talk(ctx: Context, topic: Literal["nonsense", "quotes"], minutes: float = 5):
     """
     Start a talk loop
-    :param topic: the topic for discussion. Options: "nonsense" or "quotes"
+    :param topic: the topic for discussion.
     :param time_interval: the time to wait before speaking random nonsense (minutes)
     """
 
@@ -130,7 +138,7 @@ async def talk(ctx: Context, topic: str = "nonsense", minutes: float = 5):
 
 
 @bot.command()
-async def theme(ctx: Context, game: str):
+async def theme(ctx: Context, game: Literal["rather", "trivia"]):
     """
     Creates an intro theme song for a game
     :param game: the game you want a theme song for
@@ -144,7 +152,7 @@ async def theme(ctx: Context, game: str):
 
 
 @bot.command()
-async def rather(ctx: Context, topic: str = "normal"):
+async def rather(ctx: Context, topic: Literal["normal", "sexy", "games", "fitness"] = "normal"):
     """
     Play the 'would you rather' game
     :param topic: The assistant/game's name
@@ -340,20 +348,25 @@ async def say(ctx: Context, *, text_to_speech: str):
 
 
 @bot.command()
-async def image(ctx: Context, image_prompt: str, image_model: str = ""):
+async def image(
+    ctx: Context, image_prompt: str, image_model: Literal["dall-e-2", "dall-e-3", "dall-e-3-hd"] = "dall-e-2"
+):
     """
     Generate an image using prompts and a model
     :param image_prompt: The prompt used for image generation
     :param image_model: The model to use
+    :param image_quality: Is this an HD image? Only works with dall-e-3.
     """
 
     config = get_config()
 
-    if not image_model:
-        image_model = config.get("OPENAI_GENERAL", "image_model", fallback="dall-e-2")
+    image_quality = "standard"
+
+    if image_model == "dall-e-3-hd":
+        image_model, image_quality = "dall-e-3", "hd"
 
     # create image and get relevant information
-    image_response = await openai_client.images.generate(prompt=image_prompt, model=image_model)
+    image_response = await openai_client.images.generate(prompt=image_prompt, model=image_model, quality=image_quality)
     url = image_response.data[0].url
     revised_prompt = image_response.data[0].revised_prompt
 
@@ -506,6 +519,13 @@ async def on_command_error(ctx: Context, error: CommandError):
         # Type error (gave int when expected string or the like)
         await ctx.send(
             "Invalid argument type. Please provide the correct type (string, integer, float, ...) of arguments."
+        )
+        await ctx.invoke(bot.get_command("help"), ctx.command.name)
+
+    elif isinstance(error, BadLiteralArgument):
+        # A Literal was not satisfied
+        await ctx.send(
+            f"The value you provided for `{error.param.name}` is not valid.\nThe allowed values are `{'`, `'.join(error.literals)}`."
         )
         await ctx.invoke(bot.get_command("help"), ctx.command.name)
 
