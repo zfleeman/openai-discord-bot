@@ -1,12 +1,13 @@
 import asyncio
 import os
-from datetime import datetime, timedelta
 from collections import Counter
+from datetime import datetime, timedelta
+from pathlib import Path
 from random import randint
 from urllib.request import urlopen, Request
 
 import discord
-from discord.ext.commands import Context, Bot
+from discord.ext.commands import Context, Bot, CommandNotFound, MissingRequiredArgument, CommandError, BadArgument
 from discord import FFmpegOpusAudio, Embed, Intents
 from openai import AsyncOpenAI
 
@@ -28,11 +29,34 @@ openai_client = AsyncOpenAI()
 # Bot Client
 intents = Intents.default()
 intents.message_content = True
-bot = Bot(command_prefix="!", intents=intents)
+bot = Bot(command_prefix="!", intents=intents, help_command=None)
 
 
 @bot.command()
-async def join(ctx: Context, arg1: int = 0, arg2: int = 5):
+async def help(ctx: Context, command: str = ""):
+
+    folder = Path("docs")
+    files_without_suffix = [file.stem for file in folder.iterdir() if file.is_file()]
+
+    if not command:
+        await ctx.send(
+            f"You can call `!help` on the following commands: `{'`, `'.join(files_without_suffix)}`\nFor example: `!help {files_without_suffix[0]}`"
+        )
+        return
+    elif command not in files_without_suffix:
+        await ctx.send(f"`!{command}` is not a recognized command. Get real.")
+        return
+
+    file = folder / f"{command}.md"
+    help_text = file.read_text()
+
+    embed = Embed(color=15844367, description=help_text)
+
+    await ctx.send(embed=embed)
+
+
+@bot.command()
+async def join(ctx: Context):
     """
     joins the voice channel the command sender is in
     """
@@ -53,18 +77,14 @@ async def leave(ctx: Context):
 
 
 @bot.command()
-async def clean(ctx: Context, arg1: int):
+async def clean(ctx: Context, number_of_minutes: int):
     """
     delete everything shared by the bot in the channel in which this is called
-    :param arg1: amount of minutes to look back for deletion
+    :param number_of_minutes: amount of minutes to look back for deletion
     """
     config = get_config()
 
-    if not arg1:
-        await ctx.send("You must provide a number after the `!clean` command.")
-        return
-
-    after_time = datetime.now() - timedelta(minutes=arg1)
+    after_time = datetime.now() - timedelta(minutes=number_of_minutes)
     messages = ctx.channel.history(after=after_time)
 
     bot_id = bot.user.id
@@ -77,30 +97,24 @@ async def clean(ctx: Context, arg1: int):
 
 
 @bot.command()
-async def talk(ctx: Context, arg1: str = "nonsense", arg2: float = 0, arg3: float = 5):
+async def talk(ctx: Context, topic: str = "nonsense", minutes: float = 5):
     """
     Start a talk loop
-    :param arg1: the topic for discussion. Options: "nonsense" or "quotes"
-    :param arg2: the time to wait before speaking random nonsense (minutes)
-    :param arg3: the "modifier" to the time for added randomness
+    :param topic: the topic for discussion. Options: "nonsense" or "quotes"
+    :param time_interval: the time to wait before speaking random nonsense (minutes)
     """
 
-    arg2 = arg2 * 60
-    arg3 = arg3 * 60
-    low = round(arg2) - round(arg3 / 2)
-    low = low if low > 0 else 0
-    high = arg2 + arg3
-    interval = randint(low, high)
+    interval = minutes * 60
 
     config = get_config()
-    prompt = config.get("PROMPTS", arg1)
+    prompt = config.get("PROMPTS", minutes)
 
     while True:
 
         if voice := discord.utils.get(bot.voice_clients, guild=ctx.guild):
 
             tts, file_path = await speak_and_spell(
-                thread_name=arg1,
+                thread_name=topic,
                 prompt=prompt,
                 compartment="talk",
                 guild_id=ctx.guild.id,
@@ -116,30 +130,35 @@ async def talk(ctx: Context, arg1: str = "nonsense", arg2: float = 0, arg3: floa
 
 
 @bot.command()
-async def theme(ctx: Context, arg1: str):
+async def theme(ctx: Context, game: str):
     """
     Creates an intro theme song for a game
-    :param arg1: the game you want a theme song for
+    :param game: the game you want a theme song for
     """
 
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    tts, file_path = await gs_intro_song(ctx.guild.id, arg1, openai_client=openai_client)
+    tts, file_path = await gs_intro_song(ctx.guild.id, game, openai_client=openai_client)
     source = FFmpegOpusAudio(file_path)
     player = voice.play(source)
     await ctx.send(tts)
 
 
 @bot.command()
-async def rather(ctx: Context, arg1: str = "normal"):
+async def rather(ctx: Context, topic: str = "normal"):
     """
     Play the 'would you rather' game
-    :param arg1: The assistant/game's name
+    :param topic: The assistant/game's name
     """
 
-    arg1 = arg1.lower()
+    topic = topic.lower()
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+
+    if not voice:
+        await ctx.send("You must be in a voice channel when using this command.")
+        return
+
     config = get_config()
-    thread_name = f"rather_{arg1}"
+    thread_name = f"rather_{topic}"
 
     new_hypothetical_prompt = config.get("PROMPTS", "new_hypothetical")
 
@@ -156,11 +175,11 @@ async def rather(ctx: Context, arg1: str = "normal"):
 
 
 @bot.command()
-async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30, arg3: int = 0):
+async def trivia(ctx: Context, number_of_questions: int = 5, answer_time: int = 30, start_delay: int = 0):
     """
-    :param arg1: number of questions to ask
-    :param arg2: seconds to wait before sharing the answer
-    :param arg3: seconds to wait before starting the trivia game. notifies channel if > 0
+    :param number_of_questions: number of questions to ask
+    :param answer_time: seconds to wait before sharing the answer
+    :param start_delay: seconds to wait before starting the trivia game. notifies channel if > 0
     """
 
     config = get_config()
@@ -170,11 +189,11 @@ async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30, arg3: int = 0):
     max_questions = int(config.get("GENERAL", "max_questions", fallback=20))
     max_time = int(config.get("GENERAL", "max_time", fallback=300))
 
-    if arg1 > max_questions:
+    if number_of_questions > max_questions:
         await ctx.send(f"You can't have the bot ask more than **{max_questions}** questions.")
         return
 
-    if (arg2 > max_time) or (arg3 > max_time):
+    if (answer_time > max_time) or (start_delay > max_time):
         await ctx.send(f"You can't have the bot wait more than **{max_time}** seconds.")
         return
 
@@ -182,22 +201,22 @@ async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30, arg3: int = 0):
     channel = ctx.channel
 
     notification_content = ""
-    if arg3:
-        notification_content = f"@here A new Trivia game will start in {arg3} seconds! Get ready!"
+    if start_delay:
+        notification_content = f"@here A new Trivia game will start in {start_delay} seconds! Get ready!"
 
     # trivia start embed
     start_embed = Embed(
         title="Trivia Game Initiated",
-        description=f"A new trivia game is starting.\n\n- **{arg1} questions** will be asked\n- Players have **{arg2} seconds** to pick an answer.",
+        description=f"A new trivia game is starting.\n\n- **{number_of_questions} questions** will be asked\n- Players have **{answer_time} seconds** to pick an answer.",
         color=16776960,
     )
 
     await ctx.send(content=notification_content, embed=start_embed)
-    await asyncio.sleep(arg3)
+    await asyncio.sleep(start_delay)
 
     scores = {}
     round = 0
-    while round < arg1:
+    while round < number_of_questions:
         response_dict = await get_trivia_question(guild_id=ctx.guild.id, openai_client=openai_client)
 
         question = response_dict.get("question")
@@ -221,7 +240,9 @@ async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30, arg3: int = 0):
             await ctx.send("The answer string could not be matched to any of the choices. This is a big problem.")
             return
 
-        question_embed = Embed(title=f"Trivia Question {round+1}/{arg1}", description=question, color=3447003)
+        question_embed = Embed(
+            title=f"Trivia Question {round+1}/{number_of_questions}", description=question, color=3447003
+        )
         question_embed.set_footer(text=f"{multiplier}x score multiplier.")
 
         # send the question and attach the emojis as reactions
@@ -230,7 +251,7 @@ async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30, arg3: int = 0):
             await message.add_reaction(number)
 
         # wait between questions
-        await asyncio.sleep(arg2)
+        await asyncio.sleep(answer_time)
 
         # begin working with the results
         message = await channel.fetch_message(message.id)
@@ -275,7 +296,7 @@ async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30, arg3: int = 0):
                 text=f"{', '.join(duplicates)} ➡️ Docked points because they voted on more than one answer."
             )
 
-        not_last_round = (round + 1) != arg1
+        not_last_round = (round + 1) != number_of_questions
 
         if not_last_round:
             answer_embed.description += f"\n\nScores:\n{dict_to_ordered_string(scores)}"
@@ -302,40 +323,37 @@ async def trivia(ctx: Context, arg1: int = 5, arg2: int = 30, arg3: int = 0):
 
 
 @bot.command()
-async def say(ctx: Context, *, arg: str = ""):
+async def say(ctx: Context, *, text_to_speech: str):
     """
     say whatever somebody types
-    :param arg: string of text to speak
+    :param text_to_speech: string of text to speak
     """
 
-    if not arg:
-        await ctx.send("You need to type something after the command.")
-        return
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     file_name = f"{ts}.wav"
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
     path = await generate_speech(
-        guild_id=ctx.guild.id, compartment="say", file_name=file_name, tts=arg, openai_client=openai_client
+        guild_id=ctx.guild.id, compartment="say", file_name=file_name, tts=text_to_speech, openai_client=openai_client
     )
     source = FFmpegOpusAudio(path)
     player = voice.play(source)
 
 
 @bot.command()
-async def image(ctx: Context, arg1: str, arg2: str = ""):
+async def image(ctx: Context, image_prompt: str, image_model: str = ""):
     """
     Generate an image using prompts and a model
-    :param arg1: The prompt used for image generation
-    :param arg2: The model to use
+    :param image_prompt: The prompt used for image generation
+    :param image_model: The model to use
     """
 
     config = get_config()
 
-    if not arg2:
-        arg2 = config.get("OPENAI_GENERAL", "image_model", fallback="dall-e-2")
+    if not image_model:
+        image_model = config.get("OPENAI_GENERAL", "image_model", fallback="dall-e-2")
 
     # create image and get relevant information
-    image_response = await openai_client.images.generate(prompt=arg1, model=arg2)
+    image_response = await openai_client.images.generate(prompt=image_prompt, model=image_model)
     url = image_response.data[0].url
     revised_prompt = image_response.data[0].revised_prompt
 
@@ -352,7 +370,7 @@ async def image(ctx: Context, arg1: str, arg2: str = ""):
     # create our embed object
     embed = Embed(
         title=config.get("DISCORD", "embed_title", fallback="B4NG AI Image Response"),
-        description=f"User Input:\n```{arg1}```",
+        description=f"User Input:\n```{image_prompt}```",
     )
     embed.set_image(url=f"attachment://{file_name}")
     if revised_prompt:
@@ -365,15 +383,15 @@ async def image(ctx: Context, arg1: str, arg2: str = ""):
 
 
 @bot.command()
-async def vision(ctx: Context, *, arg: str = ""):
+async def vision(ctx: Context, *, vision_prompt: str = ""):
     """
     Describe/interpret an image
-    :param arg: A prompt to be used when describing/interpreting the image
+    :param vision_prompt: A prompt to be used when describing/interpreting the image
     """
 
     config = get_config()
-    if not arg:
-        arg = config.get("PROMPTS", "vision_prompt", fallback="What is in this image?")
+    if not vision_prompt:
+        vision_prompt = config.get("PROMPTS", "vision_prompt", fallback="What is in this image?")
 
     image_url = ctx.message.attachments[0].url
 
@@ -383,7 +401,7 @@ async def vision(ctx: Context, *, arg: str = ""):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": arg},
+                    {"type": "text", "text": vision_prompt},
                     {"type": "image_url", "image_url": {"url": image_url}},
                 ],
             }
@@ -393,10 +411,10 @@ async def vision(ctx: Context, *, arg: str = ""):
 
 
 @bot.command()
-async def edit(ctx: Context, *, arg: str = ""):
+async def edit(ctx: Context, *, edit_prompt: str):
     """
     Edit an image using the original image and its mask
-    :param arg: A prompt to be used when describing the desired image edit
+    :param edit_prompt: A prompt to be used when describing the desired image edit
     """
 
     config = get_config()
@@ -429,7 +447,7 @@ async def edit(ctx: Context, *, arg: str = ""):
         model=config.get("OPENAI_GENERAL", "image_edit_model", fallback="dall-e-2"),
         image=open(image_paths[0], "rb"),
         mask=open(image_paths[1], "rb"),
-        prompt=arg,
+        prompt=edit_prompt,
         n=int(config.get("OPENAI_GENERAL", "num_image_edits", fallback="1")),
         size=config.get("OPENAI_GENERAL", "image_edit_resolution", fallback="1024x1024"),
     )
@@ -447,7 +465,7 @@ async def edit(ctx: Context, *, arg: str = ""):
     # create our embed object
     embed = Embed(
         title=config.get("DISCORD", "edit_embed_title", fallback="B4NG AI Edit Image Response"),
-        description=f"User Input:\n```{arg}```",
+        description=f"User Input:\n```{edit_prompt}```",
     )
     embed.set_image(url=f"attachment://{file_name}")
 
@@ -455,6 +473,34 @@ async def edit(ctx: Context, *, arg: str = ""):
     file_upload = discord.File(path, filename=file_name)
 
     await ctx.send(file=file_upload, embed=embed)
+
+
+@bot.event
+async def on_command_error(ctx: Context, error: CommandError):
+    """
+    Bot event handler for a user command error.
+    """
+
+    if isinstance(error, CommandNotFound):
+        # Not a command
+        await ctx.send("This is not a supported command.")
+        await ctx.invoke(bot.get_command("help"))
+
+    elif isinstance(error, MissingRequiredArgument):
+        # Missing required argument
+        await ctx.send(f"Missing required argument: `<{error.param.name}>`")
+        await ctx.invoke(bot.get_command("help"), ctx.command.name)
+
+    elif isinstance(error, BadArgument):
+        # Type error (gave int when expected string or the like)
+        await ctx.send(
+            "Invalid argument type. Please provide the correct type (string, integer, float, ...) of arguments."
+        )
+        await ctx.invoke(bot.get_command("help"), ctx.command.name)
+
+    else:
+        # Unknown error
+        await ctx.send(f"An error occurred.\n```plaintext\n{error}\n```")
 
 
 bot.run(os.getenv("DISCORD_BOT_KEY"))
