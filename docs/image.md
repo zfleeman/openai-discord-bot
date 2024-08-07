@@ -7,3 +7,4 @@ The prompt must be surrounded in quotes.
 ### Model Choices
 - `dall-e-2` (default)
 - `dall-e-3`
+- `dall-e-3-hd`
