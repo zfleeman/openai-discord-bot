@@ -115,7 +115,7 @@ async def talk(ctx: Context, topic: Literal["nonsense", "quotes"], minutes: floa
     interval = minutes * 60
 
     config = get_config()
-    prompt = config.get("PROMPTS", minutes)
+    prompt = config.get("PROMPTS", topic)
 
     while True:
 
