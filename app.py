@@ -40,7 +40,7 @@ intents.message_content = True
 bot = Bot(command_prefix="!", intents=intents, help_command=None)
 
 
-@bot.command()
+@bot.hybrid_command(name="help", description="Get help on a specific command.")
 async def help(ctx: Context, command: str = ""):
 
     folder = Path("docs")
@@ -63,7 +63,7 @@ async def help(ctx: Context, command: str = ""):
     await ctx.send(embed=embed)
 
 
-@bot.command()
+@bot.hybrid_command(name="join", description="Hostbot joins your currently active voice channel.")
 async def join(ctx: Context):
     """
     joins the voice channel the command sender is in
@@ -74,8 +74,10 @@ async def join(ctx: Context):
     else:
         await ctx.send(f"{ctx.author} is not in a voice channel.")
 
+    return
 
-@bot.command()
+
+@bot.hybrid_command(name="leave", description="Hostbot leaves your currently active voice channel.")
 async def leave(ctx: Context):
     """
     Leave a voice call
@@ -83,8 +85,12 @@ async def leave(ctx: Context):
     if ctx.voice_client:
         await ctx.guild.voice_client.disconnect()
 
+    return
 
-@bot.command()
+
+@bot.hybrid_command(
+    name="clean", description="Delete the Bot's messages that were sent after now() - number_of_minutes."
+)
 async def clean(ctx: Context, number_of_minutes: int):
     """
     delete everything shared by the bot in the channel in which this is called
@@ -103,8 +109,10 @@ async def clean(ctx: Context, number_of_minutes: int):
             await asyncio.sleep(sleep_seconds)
             await message.delete()
 
+    return
 
-@bot.command()
+
+@bot.hybrid_command(name="talk", descrition="Start a talking loop.")
 async def talk(ctx: Context, topic: Literal["nonsense", "quotes"], minutes: float = 5):
     """
     Start a talk loop
@@ -135,9 +143,10 @@ async def talk(ctx: Context, topic: Literal["nonsense", "quotes"], minutes: floa
             await asyncio.sleep(interval)
         else:
             break
+    return
 
 
-@bot.command()
+@bot.hybrid_command(name="theme", description="Create an intro song for a game.")
 async def theme(ctx: Context, game: Literal["rather", "trivia"]):
     """
     Creates an intro theme song for a game
@@ -151,7 +160,7 @@ async def theme(ctx: Context, game: Literal["rather", "trivia"]):
     await ctx.send(tts)
 
 
-@bot.command()
+@bot.hybrid_command(name="rather", description="Play the 'would you rather' game.")
 async def rather(ctx: Context, topic: Literal["normal", "sexy", "games", "fitness"] = "normal"):
     """
     Play the 'would you rather' game
@@ -182,7 +191,7 @@ async def rather(ctx: Context, topic: Literal["normal", "sexy", "games", "fitnes
     await ctx.send(tts)
 
 
-@bot.command()
+@bot.hybrid_command(name="trivia", description="Play the trivia game!")
 async def trivia(ctx: Context, number_of_questions: int = 5, answer_time: int = 30, start_delay: int = 0):
     """
     :param number_of_questions: number of questions to ask
@@ -330,7 +339,7 @@ async def trivia(ctx: Context, number_of_questions: int = 5, answer_time: int = 
     await ctx.send(embed=winner_embed)
 
 
-@bot.command()
+@bot.hybrid_command(name="say", description="Say whatever you type.")
 async def say(ctx: Context, *, text_to_speech: str):
     """
     say whatever somebody types
@@ -346,8 +355,10 @@ async def say(ctx: Context, *, text_to_speech: str):
     source = FFmpegOpusAudio(path)
     player = voice.play(source)
 
+    return
 
-@bot.command()
+
+@bot.hybrid_command(name="image", description="Generate an image using prompts and a model.")
 async def image(
     ctx: Context, image_prompt: str, image_model: Literal["dall-e-2", "dall-e-3", "dall-e-3-hd"] = "dall-e-2"
 ):
@@ -395,7 +406,7 @@ async def image(
     await ctx.send(file=file_upload, embed=embed)
 
 
-@bot.command()
+@bot.hybrid_command(name="vision", description="Describe/interpret an attached image.")
 async def vision(ctx: Context, *, vision_prompt: str = ""):
     """
     Describe/interpret an image
@@ -428,7 +439,7 @@ async def vision(ctx: Context, *, vision_prompt: str = ""):
     await ctx.send(response.choices[0].message.content)
 
 
-@bot.command()
+@bot.hybrid_command(name="edit", description="Edit an image using the original image and its mask.")
 async def edit(ctx: Context, *, edit_prompt: str):
     """
     Edit an image using the original image and its mask
@@ -532,6 +543,12 @@ async def on_command_error(ctx: Context, error: CommandError):
     else:
         # Unknown error
         await ctx.send(f"An error occurred.\n```plaintext\n{error}\n```")
+
+
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print(f"Logged in as {bot.user}")
 
 
 bot.run(os.getenv("DISCORD_BOT_KEY"))
