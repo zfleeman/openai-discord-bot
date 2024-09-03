@@ -112,8 +112,8 @@ async def clean(ctx: Context, number_of_minutes: int):
     return
 
 
-@bot.hybrid_command(name="talk", descrition="Start a talking loop.")
-async def talk(ctx: Context, topic: Literal["nonsense", "quotes"], minutes: float = 5):
+@bot.hybrid_command(name="talk", description="Start a talking loop.")
+async def talk(ctx: Context, topic: Literal["nonsense", "quotes"], minutes: float = 5.0):
     """
     Start a talk loop
     :param topic: the topic for discussion.
