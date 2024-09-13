@@ -377,13 +377,13 @@ async def image(
         prompt=image_prompt, model=image_model, quality=image_quality, n=num_images
     )
 
-    for i in range(images.data):
+    for i in range(len(images.data)):
         image = images.data[i]
         url = image.url
         revised_prompt = image.revised_prompt
 
         # create the output path
-        file_name = f"image_{images.created}_{i}.png"
+        file_name = f"image_{images.created}_{i+1}.png"
         path = content_path(guild_id=ctx.guild.id, compartment="image", file_name=file_name)
 
         # download the image from OpenAI
