@@ -349,7 +349,10 @@ async def say(ctx: Context, *, text_to_speech: str):
 
 @bot.command()
 async def image(
-    ctx: Context, image_prompt: str, image_model: Literal["dall-e-2", "dall-e-3", "dall-e-3-hd"] = "dall-e-2"
+    ctx: Context,
+    image_prompt: str,
+    image_model: Literal["dall-e-2", "dall-e-3", "dall-e-3-hd"] = "dall-e-3",
+    num_images: int = 1,
 ):
     """
     Generate an image using prompts and a model
@@ -365,34 +368,43 @@ async def image(
     if image_model == "dall-e-3-hd":
         image_model, image_quality = "dall-e-3", "hd"
 
+    if "dall-e-3" in image_model and num_images > 1:
+        await ctx.send(f"For `dall-e-3` models, `[num_images]` has to be equal to 1.")
+        return
+
     # create image and get relevant information
-    image_response = await openai_client.images.generate(prompt=image_prompt, model=image_model, quality=image_quality)
-    url = image_response.data[0].url
-    revised_prompt = image_response.data[0].revised_prompt
-
-    # create the output path
-    file_name = f"image_{image_response.created}.png"
-    path = content_path(guild_id=ctx.guild.id, compartment="image", file_name=file_name)
-
-    # download the image from OpenAI
-    with urlopen(url) as response:
-        image_data = response.read()
-        with open(path, "wb") as file:
-            file.write(image_data)
-
-    # create our embed object
-    embed = Embed(
-        title=config.get("DISCORD", "embed_title", fallback="B4NG AI Image Response"),
-        description=f"User Input:\n```{image_prompt}```",
+    images = await openai_client.images.generate(
+        prompt=image_prompt, model=image_model, quality=image_quality, n=num_images
     )
-    embed.set_image(url=f"attachment://{file_name}")
-    if revised_prompt:
-        embed.set_footer(text=f"Revised Prompt:\n{revised_prompt}")
 
-    # attach our file object
-    file_upload = discord.File(path, filename=file_name)
+    for i in range(len(images.data)):
+        image = images.data[i]
+        url = image.url
+        revised_prompt = image.revised_prompt
 
-    await ctx.send(file=file_upload, embed=embed)
+        # create the output path
+        file_name = f"image_{images.created}_{i+1}.png"
+        path = content_path(guild_id=ctx.guild.id, compartment="image", file_name=file_name)
+
+        # download the image from OpenAI
+        with urlopen(url) as response:
+            image_data = response.read()
+            with open(path, "wb") as file:
+                file.write(image_data)
+
+        # create our embed object
+        embed = Embed(
+            title=f"Image Response {i:02d}",
+            description=f"User Input:\n```{image_prompt}```",
+        )
+        embed.set_image(url=f"attachment://{file_name}")
+        if revised_prompt:
+            embed.set_footer(text=f"Revised Prompt:\n{revised_prompt}")
+
+        # attach our file object
+        file_upload = discord.File(path, filename=file_name)
+
+        await ctx.send(file=file_upload, embed=embed)
 
 
 @bot.command()
