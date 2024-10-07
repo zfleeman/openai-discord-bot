@@ -351,7 +351,7 @@ async def say(ctx: Context, *, text_to_speech: str):
 async def image(
     ctx: Context,
     image_prompt: str,
-    image_model: Literal["dall-e-2", "dall-e-3", "dall-e-3-hd"] = "dall-e-2",
+    image_model: Literal["dall-e-2", "dall-e-3", "dall-e-3-hd"] = "dall-e-3",
     num_images: int = 1,
 ):
     """
