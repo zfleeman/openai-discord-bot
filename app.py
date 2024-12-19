@@ -137,7 +137,7 @@ async def talk(ctx: Context, topic: Literal["nonsense", "quotes"], minutes: floa
             await ctx.send(tts, file=discord_file)
             await asyncio.sleep(interval)
         else:
-            await ctx.message.reply("You must be in a voice channel when using this command.")
+            await ctx.message.reply("I must be in a voice channel before you use this command.")
             break
 
 
