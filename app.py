@@ -131,9 +131,13 @@ async def talk(ctx: Context, topic: Literal["nonsense", "quotes"], minutes: floa
             source = FFmpegOpusAudio(file_path)
             player = voice.play(source)
 
-            await ctx.send(tts)
+            # create our file object
+            discord_file = discord.File(file_path, filename=file_path.name)
+
+            await ctx.send(tts, file=discord_file)
             await asyncio.sleep(interval)
         else:
+            await ctx.message.reply("You must be in a voice channel when using this command.")
             break
 
 
@@ -159,11 +163,6 @@ async def rather(ctx: Context, topic: Literal["normal", "sexy", "games", "fitnes
     """
 
     topic = topic.lower()
-    voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-
-    if not voice:
-        await ctx.send("You must be in a voice channel when using this command.")
-        return
 
     config = get_config()
     thread_name = f"rather_{topic}"
@@ -177,9 +176,16 @@ async def rather(ctx: Context, topic: Literal["normal", "sexy", "games", "fitnes
         compartment="rather",
         openai_client=openai_client,
     )
-    source = FFmpegOpusAudio(file_path)
-    player = voice.play(source)
-    await ctx.send(tts)
+
+    # play over a voice channel
+    if voice := discord.utils.get(bot.voice_clients, guild=ctx.guild):
+        source = FFmpegOpusAudio(file_path)
+        player = voice.play(source)
+
+    # create our file object
+    discord_file = discord.File(file_path, filename=file_path.name)
+
+    await ctx.send(tts, file=discord_file)
 
 
 @bot.command()
@@ -198,11 +204,11 @@ async def trivia(ctx: Context, number_of_questions: int = 5, answer_time: int = 
     max_time = int(config.get("GENERAL", "max_time", fallback=300))
 
     if number_of_questions > max_questions:
-        await ctx.send(f"You can't have the bot ask more than **{max_questions}** questions.")
+        await ctx.message.reply(f"You can't have the bot ask more than **{max_questions}** questions.")
         return
 
     if (answer_time > max_time) or (start_delay > max_time):
-        await ctx.send(f"You can't have the bot wait more than **{max_time}** seconds.")
+        await ctx.message.reply(f"You can't have the bot wait more than **{max_time}** seconds.")
         return
 
     # get our channel to find the message reactions later
@@ -340,11 +346,18 @@ async def say(ctx: Context, *, text_to_speech: str):
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     file_name = f"{ts}.wav"
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    path = await generate_speech(
+    file_path = await generate_speech(
         guild_id=ctx.guild.id, compartment="say", file_name=file_name, tts=text_to_speech, openai_client=openai_client
     )
-    source = FFmpegOpusAudio(path)
-    player = voice.play(source)
+
+    if voice:
+        source = FFmpegOpusAudio(file_path)
+        player = voice.play(source)
+
+    # create our file object
+    discord_file = discord.File(file_path, filename=file_path.name)
+
+    await ctx.message.reply(file=discord_file)
 
 
 @bot.command()
@@ -369,7 +382,7 @@ async def image(
         image_model, image_quality = "dall-e-3", "hd"
 
     if "dall-e-3" in image_model and num_images > 1:
-        await ctx.send(f"For `dall-e-3` models, `[num_images]` has to be equal to 1.")
+        await ctx.message.reply(f"For `dall-e-3` models, `[num_images]` has to be equal to 1.")
         return
 
     # create image and get relevant information
@@ -421,7 +434,7 @@ async def vision(ctx: Context, *, vision_prompt: str = ""):
     try:
         image_url = ctx.message.attachments[0].url
     except IndexError:
-        await ctx.send("```plaintext\nError: Unable to retrieve the image attachment. Did you attach an image?\n```")
+        await ctx.message.reply("```plaintext\nError: Unable to retrieve the image attachment. Did you attach an image?\n```")
         await ctx.invoke(bot.get_command("help"), ctx.command.name)
         return
 
@@ -452,7 +465,7 @@ async def edit(ctx: Context, *, edit_prompt: str):
     try:
         images = [(ctx.message.attachments[0].url, "original"), (ctx.message.attachments[1].url, "mask")]
     except IndexError:
-        await ctx.send("```plaintext\nError: Unable to retrieve the image attachments. Did you attach images?\n```")
+        await ctx.message.reply("```plaintext\nError: Unable to retrieve the image attachments. Did you attach images?\n```")
         await ctx.invoke(bot.get_command("help"), ctx.command.name)
         return
 
@@ -476,7 +489,7 @@ async def edit(ctx: Context, *, edit_prompt: str):
                 file.write(image_data)
 
         if not is_square_image(path):
-            await ctx.send("Images used in OpenAI's Image Edit mode need to be square.")
+            await ctx.message.reply("Images used in OpenAI's Image Edit mode need to be square.")
             return
 
     image_response = await openai_client.images.edit(
@@ -519,24 +532,24 @@ async def on_command_error(ctx: Context, error: CommandError):
 
     if isinstance(error, CommandNotFound):
         # Not a command
-        await ctx.send("This is not a supported command.")
+        await ctx.message.reply("This is not a supported command.")
         await ctx.invoke(bot.get_command("help"))
 
     elif isinstance(error, MissingRequiredArgument):
         # Missing required argument
-        await ctx.send(f"Missing required argument: `<{error.param.name}>`")
+        await ctx.message.reply(f"Missing required argument: `<{error.param.name}>`")
         await ctx.invoke(bot.get_command("help"), ctx.command.name)
 
     elif isinstance(error, BadArgument):
         # Type error (gave int when expected string or the like)
-        await ctx.send(
+        await ctx.message.reply(
             "Invalid argument type. Please provide the correct type (string, integer, float, ...) of arguments."
         )
         await ctx.invoke(bot.get_command("help"), ctx.command.name)
 
     elif isinstance(error, BadLiteralArgument):
         # A Literal was not satisfied
-        await ctx.send(
+        await ctx.message.reply(
             f"The value you provided for `{error.param.name}` is not valid.\nThe allowed values are `{'`, `'.join(error.literals)}`."
         )
         await ctx.invoke(bot.get_command("help"), ctx.command.name)
