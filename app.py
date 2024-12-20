@@ -117,8 +117,13 @@ async def talk(ctx: Context, topic: Literal["nonsense", "quotes"], minutes: floa
     config = get_config()
     prompt = config.get("PROMPTS", topic)
 
+    if not discord.utils.get(bot.voice_clients, guild=ctx.guild):
+        await ctx.message.reply("I must be in a voice channel before you use this command.")
+        return
+
     while True:
 
+        # check to see if a voice connection is still active
         if voice := discord.utils.get(bot.voice_clients, guild=ctx.guild):
 
             tts, file_path = await speak_and_spell(
@@ -137,7 +142,6 @@ async def talk(ctx: Context, topic: Literal["nonsense", "quotes"], minutes: floa
             await ctx.send(tts, file=discord_file)
             await asyncio.sleep(interval)
         else:
-            await ctx.message.reply("I must be in a voice channel before you use this command.")
             break
 
 
