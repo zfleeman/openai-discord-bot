@@ -1,7 +1,7 @@
 ```plaintext
 !talk <topic> [minutes]
 ```
-The `!talk` command starts a loop where the bot will continuously send messages and play audio based on a specified topic. The bot will pause between messages for the specified amount of minutes.
+The `!talk` command starts a loop where the bot will continuously send messages and play audio based on a specified topic. The bot will pause between messages for the specified amount of minutes. **This command only works if the bot is in a voice channel.**
 
 `minutes` default is `5`
 ### Topics
