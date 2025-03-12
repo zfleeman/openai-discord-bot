@@ -6,7 +6,6 @@ from typing import Tuple, Union
 
 import ffmpeg
 from openai import AsyncOpenAI
-from PIL import Image
 
 from db_utils import get_thread_id
 
