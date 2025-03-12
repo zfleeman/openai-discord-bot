@@ -155,7 +155,7 @@ async def rather(interaction: Interaction, topic: Literal["normal", "sexy", "gam
     thread_name = f"rather_{topic}"
     new_hypothetical_prompt = config.get("PROMPTS", "new_hypothetical")
 
-    await interaction.response.defer()
+    await interaction.response.defer()  # TODO: investigate InteractionCallbackResponse
 
     tts, file_path = await speak_and_spell(
         thread_name=thread_name,

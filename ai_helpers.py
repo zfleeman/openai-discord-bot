@@ -139,12 +139,6 @@ def content_path(guild_id: str, compartment: str, file_name: str):
     return dir_path / file_name
 
 
-def is_square_image(image_path: Path):
-    with Image.open(image_path) as img:
-        width, height = img.size
-        return width == height
-
-
 def dict_to_ordered_string(data: dict) -> str:
     # Sort the dictionary items by value in descending order
     sorted_items = sorted(data.items(), key=lambda item: item[1], reverse=True)
