@@ -1,14 +1,14 @@
 import json
 from configparser import ConfigParser
 from datetime import datetime
-from typing import Union, Tuple
 from pathlib import Path
+from typing import Tuple, Union
 
 import ffmpeg
+from openai import AsyncOpenAI
 from PIL import Image
 
 from db_utils import get_thread_id
-from openai import AsyncOpenAI
 
 
 def get_config():
