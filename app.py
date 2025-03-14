@@ -83,7 +83,7 @@ async def clean(interaction: Interaction, number_of_minutes: int) -> None:
     bot_id = bot.user.id
     sleep_seconds = float(config.get("GENERAL", "clean_sleep", fallback=0.75))
 
-    await interaction.response.send_message(content="Deleting messages...", delete_after=5.0)
+    await interaction.response.send_message(content="Deleting messages...", delete_after=3.0)
 
     async for message in messages:
         if message.author.id == bot_id:
