@@ -1,8 +1,7 @@
 from datetime import datetime
 
 from openai import AsyncOpenAI
-from sqlmodel import Field, SQLModel, create_engine, Session, select
-
+from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 sqlite_file_name = "database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"

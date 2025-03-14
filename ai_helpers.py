@@ -1,14 +1,13 @@
 import json
 from configparser import ConfigParser
 from datetime import datetime
-from typing import Union, Tuple
 from pathlib import Path
+from typing import Tuple, Union
 
 import ffmpeg
-from PIL import Image
+from openai import AsyncOpenAI
 
 from db_utils import get_thread_id
-from openai import AsyncOpenAI
 
 
 def get_config():
@@ -137,12 +136,6 @@ def content_path(guild_id: str, compartment: str, file_name: str):
     dir_path = Path(f"generated_content/guild_{guild_id}/{ts}/{compartment}")
     dir_path.mkdir(parents=True, exist_ok=True)
     return dir_path / file_name
-
-
-def is_square_image(image_path: Path):
-    with Image.open(image_path) as img:
-        width, height = img.size
-        return width == height
 
 
 def dict_to_ordered_string(data: dict) -> str:
