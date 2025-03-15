@@ -242,6 +242,7 @@ async def image(
 )
 async def vision(interaction: Interaction, attachment: discord.Attachment, vision_prompt: str = "") -> None:
     config = get_config()
+
     if not vision_prompt:
         vision_prompt = config.get("PROMPTS", "vision_prompt", fallback="What is in this image?")
 
