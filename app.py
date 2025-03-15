@@ -36,9 +36,6 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko
 
 @tree.command(name="join", description="Join the voice channel that the user is currently in.")
 async def join(interaction: Interaction) -> None:
-    """
-    Joins the voice channel that the command sender is currently in.
-    """
 
     if interaction.user.voice:
         await interaction.user.voice.channel.connect()
@@ -51,9 +48,7 @@ async def join(interaction: Interaction) -> None:
 
 @tree.command(name="leave", description="Leave the voice channel that the bot is currently in.")
 async def leave(interaction: Interaction) -> None:
-    """
-    Leaves the voice channel that the bot is currently in.
-    """
+
     if interaction.guild.voice_client:
         await interaction.guild.voice_client.disconnect()
         await interaction.response.send_message(content="I have left the voice chat.", delete_after=3.0)
@@ -64,12 +59,6 @@ async def leave(interaction: Interaction) -> None:
 @tree.command(name="clean", description="Delete messages sent by the bot within a specified timeframe.")
 @app_commands.describe(number_of_minutes="The number of minutes to look back for message deletion.")
 async def clean(interaction: Interaction, number_of_minutes: int) -> None:
-    """
-    Deletes messages sent by the bot in the channel within a specified timeframe.
-
-    Parameters:
-    number_of_minutes (int): The number of minutes to look back for message deletion.
-    """
     config = get_config()
 
     max_clean_minutes = int(config.get("GENERAL", "max_clean_minutes", fallback=1440))
@@ -98,14 +87,6 @@ async def clean(interaction: Interaction, number_of_minutes: int) -> None:
     topic="The topic the bot will talk about.", minutes="The interval in minutes between each message."
 )
 async def talk(interaction: Interaction, topic: Literal["nonsense", "quotes"], minutes: float = 5.0) -> None:
-    """
-    Starts a loop where the bot talks about a specified topic at regular intervals.
-
-    Parameters:
-    topic (Literal): The topic for discussion.
-    minutes (float): The interval in minutes between each message.
-    """
-
     interval = minutes * 60
 
     config = get_config()
@@ -146,13 +127,6 @@ async def talk(interaction: Interaction, topic: Literal["nonsense", "quotes"], m
 @tree.command(name="rather", description="Play a 'Would You Rather' game with a specified topic.")
 @app_commands.describe(topic="The subject for the generated hypothetical question.")
 async def rather(interaction: Interaction, topic: Literal["normal", "sexy", "games", "fitness"] = "normal") -> None:
-    """
-    Plays a 'Would You Rather' game with a specified topic.
-
-    Parameters:
-    topic (Literal): The subject for the generated hypothetical question.
-    """
-
     topic = topic.lower()
     config = get_config()
     thread_name = f"rather_{topic}"
@@ -184,13 +158,6 @@ async def rather(interaction: Interaction, topic: Literal["normal", "sexy", "gam
 @tree.command(name="say", description="Make the bot say a specified text.")
 @app_commands.describe(text_to_speech="The text you want the bot to say.")
 async def say(interaction: Interaction, text_to_speech: str) -> None:
-    """
-    Makes the bot say a specified text.
-
-    Parameters:
-    text_to_speech (str): The text you want the bot to say.
-    """
-
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     file_name = f"{ts}.wav"
     voice = discord.utils.get(bot.voice_clients, guild=interaction.guild)
@@ -226,14 +193,6 @@ async def image(
     image_prompt: str,
     image_model: Literal["dall-e-2", "dall-e-3", "dall-e-3-hd"] = "dall-e-3",
 ) -> None:
-    """
-    Generates an image using a prompt and a specified model.
-
-    Parameters:
-    image_prompt (str): The prompt used for image generation.
-    image_model (Literal): The OpenAI image model to use.
-    """
-
     image_quality = "standard"
 
     if image_model == "dall-e-3-hd":
@@ -282,14 +241,6 @@ async def image(
     vision_prompt="The prompt to be used when describing the image.",
 )
 async def vision(interaction: Interaction, attachment: discord.Attachment, vision_prompt: str = "") -> None:
-    """
-    Describes or interprets an image using a prompt.
-
-    Parameters:
-    attachment (discord.Attachment): The image file you want to describe or interpret.
-    vision_prompt (str): The prompt to be used when describing the image.
-    """
-
     config = get_config()
     if not vision_prompt:
         vision_prompt = config.get("PROMPTS", "vision_prompt", fallback="What is in this image?")
@@ -348,9 +299,7 @@ async def vision(interaction: Interaction, attachment: discord.Attachment, visio
 
 @bot.event
 async def on_ready():
-    """
-    Function to sync the command tree.
-    """
+    
     await tree.sync()  # Sync slash commands globally
     print(f"Logged in as {bot.user}")
 
