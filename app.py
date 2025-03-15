@@ -299,7 +299,7 @@ async def vision(interaction: Interaction, attachment: discord.Attachment, visio
 
 @bot.event
 async def on_ready():
-    
+
     await tree.sync()  # Sync slash commands globally
     print(f"Logged in as {bot.user}")
 
