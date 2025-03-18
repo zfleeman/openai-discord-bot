@@ -1,6 +1,10 @@
-from datetime import datetime
+"""
+Functions to work with the database
+"""
 
-from openai import AsyncOpenAI
+from datetime import datetime
+from typing import Union
+
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 sqlite_file_name = "database.db"
@@ -13,27 +17,55 @@ def get_session():
     return Session(engine)
 
 
-class Thread(SQLModel, table=True):
-    id: str = Field(default=None, primary_key=True)
-    guild_id: str
+class Key(SQLModel, table=True):
+    guild_id: str = Field(default=None, primary_key=True)
+    api_key: str
+
+
+class Response(SQLModel, table=True):
+    response_id: str = Field(default=None, primary_key=True)
     name: str
-    created_at: datetime
+    discord_id: str
+    updated: datetime
 
 
-async def get_thread_id(guild_id: str, name: str, openai_client: AsyncOpenAI = AsyncOpenAI()) -> str:
+async def get_response_id(discord_id: str, name: str) -> Union[str, None]:
     with get_session() as session:
-        statement = select(Thread).where(Thread.name == name).where(Thread.guild_id == guild_id)
-        results = session.exec(statement)
-        thread_record = results.first()
+        statement = select(Response).where(Response.discord_id == discord_id).where(Response.name == name)
+        results = session.exec(statement=statement)
+        response_record = results.first()
 
-        if not thread_record:
-            thread = await openai_client.beta.threads.create()
-            # new record
-            thread_record = Thread(id=thread.id, guild_id=guild_id, name=name, created_at=datetime.now())
-            session.add(thread_record)
+        return response_record.response_id
+
+
+async def update_response(response_id: str, discord_id: str, name: str) -> None:
+    with get_session() as session:
+        statement = select(Response).where(Response.discord_id == discord_id).where(Response.name == name)
+        results = session.exec(statement=statement)
+        response = results.one_or_none()
+
+        if response:
+            response.response_id = response_id
+            session.add(response)
+            session.commit()
+        else:
+            entry = Response(response_id=response_id, name=name, discord_id=discord_id, updated=datetime.now())
+            session.add(entry)
             session.commit()
 
-        return thread_record.id
+    return
+
+
+async def get_api_key(guild_id: str) -> str:
+    with get_session() as session:
+        statement = select(Key).where(Key.guild_id == guild_id)
+        results = session.exec(statement=statement)
+        key_record = results.first()
+
+        if not key_record:
+            raise ValueError(f"No API token found for guild_id: {guild_id}")
+
+        return key_record.api_key
 
 
 if __name__ == "__main__":
