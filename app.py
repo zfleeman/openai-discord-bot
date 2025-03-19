@@ -11,17 +11,8 @@ from urllib.request import Request, urlopen
 
 import discord
 from discord import Embed, FFmpegOpusAudio, Intents, Interaction, app_commands
-from openai import AsyncOpenAI
 
-from ai_helpers import (
-    content_path,
-    generate_speech,
-    get_config,
-    speak_and_spell,
-)
-
-# OpenAI Client
-openai_client = AsyncOpenAI()
+from ai_helpers import content_path, generate_speech, get_config, get_openai_client, speak_and_spell
 
 # Bot Client
 intents = Intents.default()
@@ -104,11 +95,10 @@ async def talk(interaction: Interaction, topic: Literal["nonsense", "quotes"], m
         if voice := discord.utils.get(bot.voice_clients, guild=interaction.guild):
 
             tts, file_path = await speak_and_spell(
-                thread_name=topic,
+                thread_name=f"talk_{topic}",
                 prompt=prompt,
                 compartment="talk",
                 guild_id=interaction.guild.id,
-                openai_client=openai_client,
             )
             source = FFmpegOpusAudio(file_path)
             _ = voice.play(source)
@@ -126,7 +116,7 @@ async def talk(interaction: Interaction, topic: Literal["nonsense", "quotes"], m
 
 @tree.command(name="rather", description="Play a 'Would You Rather' game with a specified topic.")
 @app_commands.describe(topic="The subject for the generated hypothetical question.")
-async def rather(interaction: Interaction, topic: Literal["normal", "sexy", "games", "fitness"] = "normal") -> None:
+async def rather(interaction: Interaction, topic: Literal["normal", "adult", "games", "fitness"] = "normal") -> None:
     topic = topic.lower()
     config = get_config()
     thread_name = f"rather_{topic}"
@@ -139,7 +129,6 @@ async def rather(interaction: Interaction, topic: Literal["normal", "sexy", "gam
         prompt=new_hypothetical_prompt,
         guild_id=interaction.guild.id,
         compartment="rather",
-        openai_client=openai_client,
     )
 
     # play over a voice channel
@@ -169,7 +158,6 @@ async def say(interaction: Interaction, text_to_speech: str) -> None:
         compartment="say",
         file_name=file_name,
         tts=text_to_speech,
-        openai_client=openai_client,
     )
 
     if voice:
@@ -199,6 +187,8 @@ async def image(
         image_model, image_quality = "dall-e-3", "hd"
 
     await interaction.response.defer()
+
+    openai_client = await get_openai_client(interaction.guild_id)
 
     # create image and get relevant information
     images = await openai_client.images.generate(prompt=image_prompt, model=image_model, quality=image_quality)
@@ -255,6 +245,8 @@ async def vision(interaction: Interaction, attachment: discord.Attachment, visio
         return
 
     await interaction.response.defer()
+
+    openai_client = await get_openai_client(interaction.guild_id)
 
     response = await openai_client.chat.completions.create(
         model=config.get("OPENAI_GENERAL", "vision_model", fallback="gpt-4o"),
