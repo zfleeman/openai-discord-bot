@@ -15,34 +15,49 @@ engine = create_engine(SQLITE_URL)
 
 
 class Key(SQLModel, table=True):
+    """
+    Table for storing OpenAI API keys.
+    """
     guild_id: str = Field(default=None, primary_key=True)
     guild_name: str
     api_key: str
 
 
-class Response(SQLModel, table=True):
+class Chat(SQLModel, table=True):
+    """
+    Table for storing OpenAI Response IDs
+    """
     response_id: str = Field(default=None, primary_key=True)
-    thread_name: str
+    command_name: str
     guild_id: str
     updated: datetime
 
 
-def get_session():
+def get_session() -> Session:
+    """
+    Returns a database session for queries 'n' things.
+    """
     return Session(engine)
 
 
-async def get_response_id(guild_id: str, thread_name: str) -> Union[str, None]:
+async def get_response_id(guild_id: str, command_name: str) -> Union[str, None]:
+    """
+    Looks for a previous reponse id if one exists for a given "command"
+    """
     with get_session() as session:
-        statement = select(Response).where(Response.guild_id == guild_id).where(Response.thread_name == thread_name)
+        statement = select(Chat).where(Chat.guild_id == guild_id).where(Chat.command_name == command_name)
         results = session.exec(statement=statement)
         response_record = results.one_or_none()
 
         return response_record.response_id if response_record else None
 
 
-async def update_response(response_id: str, guild_id: str, thread_name: str) -> None:
+async def update_response(response_id: str, guild_id: str, command_name: str) -> None:
+    """
+    Update the command's record in the Chat table.
+    """
     with get_session() as session:
-        statement = select(Response).where(Response.guild_id == guild_id).where(Response.thread_name == thread_name)
+        statement = select(Chat).where(Chat.guild_id == guild_id).where(Chat.command_name == command_name)
         results = session.exec(statement=statement)
         response = results.one_or_none()
 
@@ -52,7 +67,7 @@ async def update_response(response_id: str, guild_id: str, thread_name: str) -> 
             session.add(response)
             session.commit()
         else:
-            entry = Response(response_id=response_id, thread_name=thread_name, guild_id=guild_id, updated=datetime.now())
+            entry = Chat(response_id=response_id, command_name=command_name, guild_id=guild_id, updated=datetime.now())
             session.add(entry)
             session.commit()
 
@@ -60,6 +75,9 @@ async def update_response(response_id: str, guild_id: str, thread_name: str) -> 
 
 
 async def get_api_key(guild_id: str) -> str:
+    """
+    Retrieve the top-secret API key from the incredibly secure database.
+    """
     fernet_key = os.getenv("FERNET_KEY")
     if not fernet_key:
         raise ValueError("FERNET_KEY environment variable not set!")

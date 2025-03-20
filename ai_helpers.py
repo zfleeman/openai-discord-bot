@@ -32,23 +32,33 @@ async def get_openai_client(guild_id: str) -> AsyncOpenAI:
     return openai_client
 
 
-async def new_response(guild_id: str, thread_name: str, prompt: str, openai_client: Optional[AsyncOpenAI] = None) -> Response:
+async def new_response(
+    guild_id: str,
+    command_name: str,
+    prompt: str,
+    openai_client: Optional[AsyncOpenAI] = None,
+    model: str = "gpt-4o-mini",
+) -> Response:
     """
     Generate a new response with the OpenAI Response API and store its ID
     """
     config = get_config()
 
+    # command-specific models
+    if command_name == "talk_quotes":
+        model = "gpt-4o"
+
     if not openai_client:
         openai_client = await get_openai_client(guild_id=guild_id)
 
-    previous_response_id = await get_response_id(guild_id=guild_id, thread_name=thread_name)
+    previous_response_id = await get_response_id(guild_id=guild_id, command_name=command_name)
 
-    instructions = config.get("OPENAI_INSTRUCTIONS", thread_name)
+    instructions = config.get("OPENAI_INSTRUCTIONS", command_name)
     response = await openai_client.responses.create(
-        input=prompt, model="gpt-4o", instructions=instructions, previous_response_id=previous_response_id
+        input=prompt, model=model, instructions=instructions, previous_response_id=previous_response_id
     )
 
-    await update_response(response_id=response.id, guild_id=guild_id, thread_name=thread_name)
+    await update_response(response_id=response.id, guild_id=guild_id, command_name=command_name)
 
     return response
 
@@ -77,7 +87,7 @@ async def generate_speech(
 
 
 async def speak_and_spell(
-    thread_name: str,
+    command_name: str,
     prompt: str,
     guild_id: str,
     compartment: str = "default",
@@ -88,7 +98,9 @@ async def speak_and_spell(
 
     openai_client = await get_openai_client(guild_id=guild_id)
 
-    response = await new_response(guild_id=guild_id, thread_name=thread_name, prompt=prompt, openai_client=openai_client)
+    response = await new_response(
+        guild_id=guild_id, command_name=command_name, prompt=prompt, openai_client=openai_client
+    )
 
     tts = response.output_text
 

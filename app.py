@@ -1,3 +1,4 @@
+# pylint: disable=C0116
 """
 A simple Discord Bot that utilizes the OpenAI API.
 """
@@ -95,7 +96,7 @@ async def talk(interaction: Interaction, topic: Literal["nonsense", "quotes"], m
         if voice := discord.utils.get(bot.voice_clients, guild=interaction.guild):
 
             tts, file_path = await speak_and_spell(
-                thread_name=f"talk_{topic}",
+                command_name=f"talk_{topic}",
                 prompt=prompt,
                 compartment="talk",
                 guild_id=interaction.guild.id,
@@ -119,13 +120,13 @@ async def talk(interaction: Interaction, topic: Literal["nonsense", "quotes"], m
 async def rather(interaction: Interaction, topic: Literal["normal", "adult", "games", "fitness"] = "normal") -> None:
     topic = topic.lower()
     config = get_config()
-    thread_name = f"rather_{topic}"
+    command_name = f"rather_{topic}"
     new_hypothetical_prompt = config.get("PROMPTS", "new_hypothetical")
 
     await interaction.response.defer()
 
     tts, file_path = await speak_and_spell(
-        thread_name=thread_name,
+        command_name=command_name,
         prompt=new_hypothetical_prompt,
         guild_id=interaction.guild.id,
         compartment="rather",
