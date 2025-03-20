@@ -14,6 +14,7 @@ import discord
 from discord import Embed, FFmpegOpusAudio, Intents, Interaction, app_commands
 
 from ai_helpers import content_path, generate_speech, get_config, get_openai_client, speak_and_spell
+from db_utils import create_command_context
 
 # Bot Client
 intents = Intents.default()
@@ -28,29 +29,32 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko
 
 @tree.command(name="join", description="Join the voice channel that the user is currently in.")
 async def join(interaction: Interaction) -> None:
+    context = await create_command_context(interaction)
 
     if interaction.user.voice:
         await interaction.user.voice.channel.connect()
         await interaction.response.send_message(content="I have joined the voice chat.", delete_after=3.0)
     else:
-        await interaction.response.send_message(content=f"{interaction.user} is not in a voice channel.")
+        await interaction.response.send_message(content=f"{context.user} is not in a voice channel.")
 
-    return
+    return await context.save()
 
 
 @tree.command(name="leave", description="Leave the voice channel that the bot is currently in.")
 async def leave(interaction: Interaction) -> None:
+    context = await create_command_context(interaction)
 
     if interaction.guild.voice_client:
         await interaction.guild.voice_client.disconnect()
         await interaction.response.send_message(content="I have left the voice chat.", delete_after=3.0)
 
-    return
+    return await context.save()
 
 
 @tree.command(name="clean", description="Delete messages sent by the bot within a specified timeframe.")
 @app_commands.describe(number_of_minutes="The number of minutes to look back for message deletion.")
 async def clean(interaction: Interaction, number_of_minutes: int) -> None:
+    context = await create_command_context(interaction, params={"number_of_minutes": number_of_minutes})
     config = get_config()
 
     max_clean_minutes = int(config.get("GENERAL", "max_clean_minutes", fallback=1440))
@@ -71,15 +75,16 @@ async def clean(interaction: Interaction, number_of_minutes: int) -> None:
             await asyncio.sleep(sleep_seconds)
             await message.delete()
 
-    return
+    return await context.save()
 
 
 @tree.command(name="talk", description="Start a loop where the bot talks about a specified topic at regular intervals.")
 @app_commands.describe(
-    topic="The topic the bot will talk about.", minutes="The interval in minutes between each message."
+    topic="The topic the bot will talk about.", wait_minutes="The interval in minutes between each message."
 )
-async def talk(interaction: Interaction, topic: Literal["nonsense", "quotes"], minutes: float = 5.0) -> None:
-    interval = minutes * 60
+async def talk(interaction: Interaction, topic: Literal["nonsense", "quotes"], wait_minutes: float = 5.0) -> None:
+    context = await create_command_context(interaction, params={"topic": f"talk_{topic}", "wait_minutes": wait_minutes})
+    interval = wait_minutes * 60
 
     config = get_config()
     prompt = config.get("PROMPTS", topic)
@@ -96,10 +101,8 @@ async def talk(interaction: Interaction, topic: Literal["nonsense", "quotes"], m
         if voice := discord.utils.get(bot.voice_clients, guild=interaction.guild):
 
             tts, file_path = await speak_and_spell(
-                command_name=f"talk_{topic}",
+                context=context,
                 prompt=prompt,
-                compartment="talk",
-                guild_id=interaction.guild.id,
             )
             source = FFmpegOpusAudio(file_path)
             _ = voice.play(source)
@@ -112,24 +115,22 @@ async def talk(interaction: Interaction, topic: Literal["nonsense", "quotes"], m
         else:
             break
 
-    return
+    return await context.save()
 
 
 @tree.command(name="rather", description="Play a 'Would You Rather' game with a specified topic.")
 @app_commands.describe(topic="The subject for the generated hypothetical question.")
 async def rather(interaction: Interaction, topic: Literal["normal", "adult", "games", "fitness"] = "normal") -> None:
-    topic = topic.lower()
+    context = await create_command_context(interaction, params={"topic": f"rather_{topic}"})
     config = get_config()
-    command_name = f"rather_{topic}"
+    topic = f"rather_{topic}"
     new_hypothetical_prompt = config.get("PROMPTS", "new_hypothetical")
 
     await interaction.response.defer()
 
     tts, file_path = await speak_and_spell(
-        command_name=command_name,
+        context=context,
         prompt=new_hypothetical_prompt,
-        guild_id=interaction.guild.id,
-        compartment="rather",
     )
 
     # play over a voice channel
@@ -142,7 +143,7 @@ async def rather(interaction: Interaction, topic: Literal["normal", "adult", "ga
 
     await interaction.followup.send(content=tts, file=discord_file)
 
-    return
+    return await context.save()
 
 
 @tree.command(name="say", description="Make the bot say a specified text.")
@@ -152,15 +153,15 @@ async def say(
     text_to_speech: str,
     voice: Literal["alloy", "ash", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"] = "onyx",
 ) -> None:
+    context = await create_command_context(interaction, params={"text_to_speech": text_to_speech, "voice": voice})
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     file_name = f"{ts}.wav"
-    voice_client = discord.utils.get(bot.voice_clients, guild=interaction.guild)
+    voice_client = discord.utils.get(bot.voice_clients, guild=context.guild_id)
 
     await interaction.response.defer()
 
     file_path = await generate_speech(
-        guild_id=interaction.guild.id,
-        compartment="say",
+        context=context,
         file_name=file_name,
         tts=text_to_speech,
         voice=voice,
@@ -175,7 +176,7 @@ async def say(
 
     await interaction.followup.send(content=text_to_speech, file=discord_file)
 
-    return
+    return await context.save()
 
 
 @tree.command(name="image", description="Generate an image using a prompt and a specified model.")
@@ -187,6 +188,7 @@ async def image(
     image_prompt: str,
     image_model: Literal["dall-e-2", "dall-e-3", "dall-e-3-hd"] = "dall-e-3",
 ) -> None:
+    context = await create_command_context(interaction, params={"prompt": image_prompt, "model": image_model})
     image_quality = "standard"
 
     if image_model == "dall-e-3-hd":
@@ -194,7 +196,7 @@ async def image(
 
     await interaction.response.defer()
 
-    openai_client = await get_openai_client(interaction.guild_id)
+    openai_client = await get_openai_client(context.guild_id)
 
     # create image and get relevant information
     images = await openai_client.images.generate(prompt=image_prompt, model=image_model, quality=image_quality)
@@ -205,7 +207,7 @@ async def image(
 
     # create the output path
     file_name = f"image_{images.created}.png"
-    path = content_path(guild_id=interaction.guild.id, compartment="image", file_name=file_name)
+    path = content_path(context=context, file_name=file_name)
 
     # download the image from OpenAI
     with urlopen(url) as response:
@@ -228,7 +230,7 @@ async def image(
 
     await interaction.followup.send(file=file_upload, embed=embed)
 
-    return
+    return await context.save()
 
 
 @tree.command(name="vision", description="Describe or interpret an image using a prompt.")
@@ -237,6 +239,7 @@ async def image(
     vision_prompt="The prompt to be used when describing the image.",
 )
 async def vision(interaction: Interaction, attachment: discord.Attachment, vision_prompt: str = "") -> None:
+    context = await create_command_context(interaction, params={"prompt": vision_prompt})
     config = get_config()
 
     if not vision_prompt:
@@ -252,7 +255,7 @@ async def vision(interaction: Interaction, attachment: discord.Attachment, visio
 
     await interaction.response.defer()
 
-    openai_client = await get_openai_client(interaction.guild_id)
+    openai_client = await get_openai_client(context.guild_id)
 
     response = await openai_client.responses.create(
         model=config.get("OPENAI_GENERAL", "vision_model", fallback="gpt-4o"),
@@ -294,7 +297,7 @@ async def vision(interaction: Interaction, attachment: discord.Attachment, visio
 
     Path(attachment.filename).unlink()
 
-    return
+    return await context.save()
 
 
 @bot.event
