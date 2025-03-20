@@ -18,6 +18,7 @@ class Key(SQLModel, table=True):
     """
     Table for storing OpenAI API keys.
     """
+
     guild_id: str = Field(default=None, primary_key=True)
     guild_name: str
     api_key: str
@@ -27,6 +28,7 @@ class Chat(SQLModel, table=True):
     """
     Table for storing OpenAI Response IDs
     """
+
     response_id: str = Field(default=None, primary_key=True)
     command_name: str
     guild_id: str
@@ -42,7 +44,7 @@ def get_session() -> Session:
 
 async def get_response_id(guild_id: str, command_name: str) -> Union[str, None]:
     """
-    Looks for a previous reponse id if one exists for a given "command"
+    Looks for a previous reponse id if one exists for a given "command" in the Chat table
     """
     with get_session() as session:
         statement = select(Chat).where(Chat.guild_id == guild_id).where(Chat.command_name == command_name)
@@ -52,7 +54,7 @@ async def get_response_id(guild_id: str, command_name: str) -> Union[str, None]:
         return response_record.response_id if response_record else None
 
 
-async def update_response(response_id: str, guild_id: str, command_name: str) -> None:
+async def update_chat(response_id: str, guild_id: str, command_name: str) -> None:
     """
     Update the command's record in the Chat table.
     """

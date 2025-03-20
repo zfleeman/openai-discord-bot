@@ -146,8 +146,12 @@ async def rather(interaction: Interaction, topic: Literal["normal", "adult", "ga
 
 
 @tree.command(name="say", description="Make the bot say a specified text.")
-@app_commands.describe(text_to_speech="The text you want the bot to say.")
-async def say(interaction: Interaction, text_to_speech: str) -> None:
+@app_commands.describe(text_to_speech="The text you want the bot to say.", voice="The OpenAI voice model to use.")
+async def say(
+    interaction: Interaction,
+    text_to_speech: str,
+    voice: Literal["alloy", "ash", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"] = "onyx",
+) -> None:
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     file_name = f"{ts}.wav"
     voice = discord.utils.get(bot.voice_clients, guild=interaction.guild)
@@ -159,6 +163,7 @@ async def say(interaction: Interaction, text_to_speech: str) -> None:
         compartment="say",
         file_name=file_name,
         tts=text_to_speech,
+        voice=voice,
     )
 
     if voice:
@@ -249,17 +254,18 @@ async def vision(interaction: Interaction, attachment: discord.Attachment, visio
 
     openai_client = await get_openai_client(interaction.guild_id)
 
-    response = await openai_client.chat.completions.create(
+    response = await openai_client.responses.create(
         model=config.get("OPENAI_GENERAL", "vision_model", fallback="gpt-4o"),
-        messages=[
+        input=[
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": vision_prompt},
-                    {"type": "image_url", "image_url": {"url": image_url}},
+                    {"type": "input_text", "text": vision_prompt},
+                    {"type": "input_image", "image_url": image_url},
                 ],
             }
         ],
+        max_output_tokens=config.getint("OPENAI_GENERAL", "max_output_tokens", fallback=500),
     )
 
     embed = Embed(
@@ -282,7 +288,7 @@ async def vision(interaction: Interaction, attachment: discord.Attachment, visio
     discord_file = discord.File(fp=attachment.filename, filename=attachment.filename)
 
     embed.set_image(url=f"attachment://{attachment.filename}")
-    embed.set_footer(text=response.choices[0].message.content)
+    embed.set_footer(text=response.output_text)
 
     await interaction.followup.send(embed=embed, file=discord_file)
 
