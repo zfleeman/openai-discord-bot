@@ -9,6 +9,7 @@ from typing import Optional, Tuple
 
 from openai import AsyncOpenAI
 from openai.types.responses import Response
+
 from db_utils import get_api_key, get_response_id, update_chat
 
 
