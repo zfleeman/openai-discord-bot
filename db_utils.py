@@ -56,11 +56,10 @@ class Chat(SQLModel, table=True):
     updated: datetime
 
 
-async def create_command_context(interaction: Interaction, **kwargs):
+async def create_command_context(interaction: Interaction, **kwargs) -> CommandContext:
     """
-    Helper function to create and save a CommandContext entry.
+    Helper function to create CommandContext entry.
     """
-
     context = CommandContext(
         guild_id=interaction.guild_id,
         user_id=interaction.user.id,
