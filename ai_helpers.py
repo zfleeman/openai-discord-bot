@@ -1,61 +1,97 @@
-import json
+"""
+Helper functions that interact with OpenAI
+"""
+
 from configparser import ConfigParser
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Optional, Tuple
 
-import ffmpeg
 from openai import AsyncOpenAI
+from openai.types.responses import Response
 
-from db_utils import get_thread_id
+from db_utils import get_api_key, get_response_id, update_chat
 
 
 def get_config():
+    """
+    Read the configuration specified in the config ini
+    """
     config = ConfigParser()
     config.read("config.ini")
     return config
 
 
-async def new_thread_response(
-    thread_name: str,
-    prompt: str = "",
-    guild_id: str = "",
-    response_format: Union[str, dict] = "auto",
-    openai_client: AsyncOpenAI = AsyncOpenAI(),
-):
+async def get_openai_client(guild_id: str) -> AsyncOpenAI:
+    """
+    Return the guild-assigned API key
+    """
+    api_key = await get_api_key(guild_id=guild_id)
+    openai_client = AsyncOpenAI(api_key=api_key)
 
+    return openai_client
+
+
+async def new_response(
+    guild_id: str,
+    command_name: str,
+    prompt: str,
+    openai_client: Optional[AsyncOpenAI] = None,
+    model: str = "gpt-4o-mini",
+    custom_instructions: str = "",
+) -> Response:
+    """
+    Generate a new response with the OpenAI Response API and store its ID
+    """
     config = get_config()
-    assistant_id = config.get("OPENAI_ASSISTANTS", thread_name)
 
-    thread_id = await get_thread_id(guild_id=guild_id, name=thread_name, openai_client=openai_client)
+    # command-specific models
+    if command_name == "talk_quotes":
+        model = "gpt-4o"
 
-    # add a message to the thread
-    await openai_client.beta.threads.messages.create(
-        thread_id=thread_id,
-        role="user",
-        content=prompt,
+    # use command-specified custom instructions --> for future commands
+    instructions = custom_instructions or config.get("OPENAI_INSTRUCTIONS", command_name)
+
+    # limit the response output to conform to Discord character limit
+    max_output_tokens = config.getint("OPENAI_GENERAL", "max_output_tokens", fallback=500)
+
+    if not openai_client:
+        openai_client = await get_openai_client(guild_id=guild_id)
+
+    previous_response_id = await get_response_id(guild_id=guild_id, command_name=command_name)
+
+    response = await openai_client.responses.create(
+        input=prompt,
+        model=model,
+        instructions=instructions,
+        previous_response_id=previous_response_id,
+        max_output_tokens=max_output_tokens,
     )
 
-    # run the thread with the assistant and monitor the situation
-    run = await openai_client.beta.threads.runs.create_and_poll(
-        thread_id=thread_id, assistant_id=assistant_id, response_format=response_format
-    )
-
-    messages = await openai_client.beta.threads.messages.list(thread_id=thread_id)
-
-    # get the most recent response from the assistant
-    response = messages.data[0]
+    await update_chat(response_id=response.id, guild_id=guild_id, command_name=command_name)
 
     return response
 
 
 async def generate_speech(
-    guild_id: str, compartment: str, file_name: str, tts: str, openai_client: AsyncOpenAI = AsyncOpenAI()
+    guild_id: str,
+    compartment: str,
+    file_name: str,
+    tts: str,
+    voice: str = "onyx",
+    openai_client: Optional[AsyncOpenAI] = None,
 ) -> Path:
+    """
+    Use OpenAI's Speech API to create a text-to-speech audio file
+    """
     config = get_config()
+
+    if not openai_client:
+        openai_client = await get_openai_client(guild_id=guild_id)
+
     async with openai_client.audio.speech.with_streaming_response.create(
         model=config.get("OPENAI_GENERAL", "speech_model", fallback="tts-1"),
-        voice=config.get("OPENAI_GENERAL", "voice", fallback="onyx"),
+        voice=voice,
         input=tts,
         response_format=config.get("OPENAI_GENERAL", "speech_file_format", fallback="wav"),
     ) as speech:
@@ -66,16 +102,23 @@ async def generate_speech(
 
 
 async def speak_and_spell(
-    thread_name: str,
+    command_name: str,
     prompt: str,
     guild_id: str,
     compartment: str = "default",
-    openai_client: AsyncOpenAI = AsyncOpenAI(),
 ) -> Tuple[str, Path]:
-    response = await new_thread_response(
-        thread_name=thread_name, prompt=prompt, guild_id=guild_id, openai_client=openai_client
+    """
+    Create a new response and WAV file in one nice function.
+    """
+
+    openai_client = await get_openai_client(guild_id=guild_id)
+
+    response = await new_response(
+        guild_id=guild_id, command_name=command_name, prompt=prompt, openai_client=openai_client
     )
-    tts = response.content[0].text.value
+
+    tts = response.output_text
+
     file_path = await generate_speech(
         guild_id=guild_id, compartment=compartment, tts=tts, file_name=f"{response.id}.wav", openai_client=openai_client
     )
@@ -83,66 +126,11 @@ async def speak_and_spell(
     return tts, file_path
 
 
-async def gs_intro_song(guild_id: str, name: str, openai_client: AsyncOpenAI = AsyncOpenAI()):
-    config = get_config()
-    name = f"{name}_theme"
-
-    prompt = config.get("PROMPTS", name)
-
-    tts, file_path = await speak_and_spell(
-        thread_name="gs_host", prompt=prompt, guild_id=guild_id, compartment="theme", openai_client=openai_client
-    )
-
-    # ffmpeg work to combine streams
-    ## load both audio files
-    theme_song = ffmpeg.input("gameshow.mp3").audio
-    words = ffmpeg.input(file_path).audio
-
-    ## adjust volumes
-    theme_song = theme_song.filter("volume", 0.25)
-    words = words.filter("volume", 3)
-
-    ## merge and output
-    dt_string = datetime.now().strftime("%Y%m%d%H%M%S")
-    ouput_file = content_path(guild_id=guild_id, compartment="theme", file_name=f"intro_{dt_string}.wav")
-    merged_audio = ffmpeg.filter((theme_song, words), "amix")
-    out = ffmpeg.output(merged_audio, str(ouput_file)).overwrite_output()
-    out.run(quiet=True)
-
-    return tts, ouput_file
-
-
-async def get_trivia_question(guild_id: str, openai_client: AsyncOpenAI = AsyncOpenAI()) -> dict:
-    config = get_config()
-    trivia_prompt = config.get("PROMPTS", "trivia_game")
-
-    response = await new_thread_response(
-        thread_name="trivia_game",
-        prompt=trivia_prompt,
-        guild_id=guild_id,
-        response_format={"type": "json_object"},
-        openai_client=openai_client,
-    )
-
-    text_json = response.content[0].text.value
-    response_dict = json.loads(text_json)
-
-    return response_dict
-
-
-def content_path(guild_id: str, compartment: str, file_name: str):
-    config = get_config()
-    ts = datetime.now().strftime(config.get("GENERAL", "session_strftime", fallback="dall-e-2"))
+def content_path(guild_id: str, compartment: str, file_name: str) -> Path:
+    """
+    Create a path to store the content generated by OpenAI.
+    """
+    ts = datetime.now().strftime(format="%Y-%m-%d - %A")
     dir_path = Path(f"generated_content/guild_{guild_id}/{ts}/{compartment}")
     dir_path.mkdir(parents=True, exist_ok=True)
     return dir_path / file_name
-
-
-def dict_to_ordered_string(data: dict) -> str:
-    # Sort the dictionary items by value in descending order
-    sorted_items = sorted(data.items(), key=lambda item: item[1], reverse=True)
-
-    # Format the sorted items into a numbered list
-    formatted_string = "\n".join([f"{i+1}. **{key}**: {value}" for i, (key, value) in enumerate(sorted_items)])
-
-    return formatted_string
