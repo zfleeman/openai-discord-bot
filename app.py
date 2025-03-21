@@ -188,7 +188,7 @@ async def image(
     image_prompt: str,
     image_model: Literal["dall-e-2", "dall-e-3", "dall-e-3-hd"] = "dall-e-3",
 ) -> None:
-    context = await create_command_context(interaction, params={"prompt": image_prompt, "model": image_model})
+    context = await create_command_context(interaction, params={"image_prompt": image_prompt, "model": image_model})
     image_quality = "standard"
 
     if image_model == "dall-e-3-hd":
@@ -237,7 +237,9 @@ async def image(
     vision_prompt="The prompt to be used when describing the image.",
 )
 async def vision(interaction: Interaction, attachment: discord.Attachment, vision_prompt: str = "") -> None:
-    context = await create_command_context(interaction, params={"prompt": vision_prompt})
+    context = await create_command_context(
+        interaction, params={"vision_prompt": vision_prompt, "attachment": attachment.filename}
+    )
     config = get_config()
 
     if not vision_prompt:
