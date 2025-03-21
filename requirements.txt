@@ -1,5 +1,5 @@
 ffmpeg-python==0.2.0
-openai==1.68.0
+openai==1.68.2
 discord.py[voice]==2.5.2
 sqlmodel==0.0.24
 cryptography==44.0.2
