@@ -106,7 +106,6 @@ async def speak_and_spell(
     """
     Create a new response and WAV file in one nice function.
     """
-
     openai_client = await get_openai_client(guild_id=context.guild_id)
 
     response = await new_response(context=context, prompt=prompt, openai_client=openai_client)

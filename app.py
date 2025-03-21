@@ -35,7 +35,7 @@ async def join(interaction: Interaction) -> None:
         await interaction.user.voice.channel.connect()
         await interaction.response.send_message(content="I have joined the voice chat.", delete_after=3.0)
     else:
-        await interaction.response.send_message(content=f"{context.user} is not in a voice channel.")
+        await interaction.response.send_message(content=f"{interaction.user.name} is not in a voice channel.")
 
     return await context.save()
 
@@ -156,7 +156,7 @@ async def say(
     context = await create_command_context(interaction, params={"text_to_speech": text_to_speech, "voice": voice})
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     file_name = f"{ts}.wav"
-    voice_client = discord.utils.get(bot.voice_clients, guild=context.guild_id)
+    voice_client = discord.utils.get(bot.voice_clients, guild=interaction.guild_id)
 
     await interaction.response.defer()
 
@@ -196,21 +196,19 @@ async def image(
 
     await interaction.response.defer()
 
-    openai_client = await get_openai_client(context.guild_id)
+    openai_client = await get_openai_client(interaction.guild_id)
 
     # create image and get relevant information
-    images = await openai_client.images.generate(prompt=image_prompt, model=image_model, quality=image_quality)
+    image_response = await openai_client.images.generate(prompt=image_prompt, model=image_model, quality=image_quality)
 
-    image_object = images.data[0]
-    url = image_object.url
-    revised_prompt = image_object.revised_prompt
+    image_object = image_response.data[0]
 
     # create the output path
-    file_name = f"image_{images.created}.png"
+    file_name = f"image_{image_response.created}.png"
     path = content_path(context=context, file_name=file_name)
 
     # download the image from OpenAI
-    with urlopen(url) as response:
+    with urlopen(image_object.url) as response:
         image_data = response.read()
         with open(path, "wb") as file:
             file.write(image_data)
@@ -222,8 +220,8 @@ async def image(
         description=f"User Input:\n```{image_prompt}```",
     )
     embed.set_image(url=f"attachment://{file_name}")
-    if revised_prompt:
-        embed.set_footer(text=f"Revised Prompt:\n{revised_prompt}")
+    if image_object.revised_prompt:
+        embed.set_footer(text=f"Revised Prompt:\n{image_object.revised_prompt}")
 
     # attach our file object
     file_upload = discord.File(fp=path, filename=file_name)
@@ -255,7 +253,7 @@ async def vision(interaction: Interaction, attachment: discord.Attachment, visio
 
     await interaction.response.defer()
 
-    openai_client = await get_openai_client(context.guild_id)
+    openai_client = await get_openai_client(interaction.guild_id)
 
     response = await openai_client.responses.create(
         model=config.get("OPENAI_GENERAL", "vision_model", fallback="gpt-4o"),

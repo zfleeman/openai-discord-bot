@@ -25,8 +25,8 @@ class CommandContext(SQLModel, table=True):
     user_id: int = Field(index=True)
     user: str
     command_name: str
-    timestamp: datetime = Field(default_factory=datetime.now)
     params: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    timestamp: datetime = Field(default_factory=datetime.now)
 
     async def save(self) -> bool:
         with get_session() as session:
@@ -75,6 +75,7 @@ def get_session() -> Session:
     """
     Returns a database session for queries 'n' things.
     """
+
     return Session(engine)
 
 
@@ -82,6 +83,7 @@ async def get_response_id(context: CommandContext) -> Union[str, None]:
     """
     Looks for a previous reponse id if one exists for a given "command" in the Chat table
     """
+
     with get_session() as session:
         statement = (
             select(Chat).where(Chat.guild_id == context.guild_id).where(Chat.topic == context.params.get("topic"))
@@ -96,6 +98,7 @@ async def update_chat(response_id: str, context: CommandContext) -> None:
     """
     Update the command's record in the Chat table.
     """
+
     with get_session() as session:
         statement = (
             select(Chat).where(Chat.guild_id == context.guild_id).where(Chat.topic == context.params.get("topic"))
@@ -126,6 +129,7 @@ async def get_api_key(guild_id: int) -> str:
     Retrieve the top-secret API key from the incredibly secure database.
     """
     fernet_key = os.getenv("FERNET_KEY")
+
     if not fernet_key:
         raise ValueError("FERNET_KEY environment variable not set!")
 
