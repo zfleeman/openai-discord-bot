@@ -29,6 +29,10 @@ class CommandContext(SQLModel, table=True):
     timestamp: datetime = Field(default_factory=datetime.now)
 
     async def save(self) -> bool:
+        """
+        Writes a CommandContext to the db
+        """
+
         with get_session() as session:
             session.add(self)
             session.commit()

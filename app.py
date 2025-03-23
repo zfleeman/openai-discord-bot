@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 import discord
 from discord import Embed, FFmpegOpusAudio, Intents, Interaction, app_commands
 
-from ai_helpers import content_path, generate_speech, get_config, get_openai_client, speak_and_spell
+from ai_helpers import content_path, generate_speech, get_config, get_openai_client, new_response, speak_and_spell
 from db_utils import create_command_context
 
 # Bot Client
@@ -296,6 +296,36 @@ async def vision(interaction: Interaction, attachment: discord.Attachment, visio
     await interaction.followup.send(embed=embed, file=discord_file)
 
     Path(attachment.filename).unlink()
+
+    return await context.save()
+
+
+@tree.command(name="chat", description="Have a conversation with an OpenAI Text Model, like you would with ChatGPT.")
+# @app_commands.describe(input_text="", save_chat="")
+async def chat(interaction: Interaction, input_text: str, save_chat: Literal["Yes", "No"] = "No") -> None:
+    config = get_config()
+    custom_instructions = config.get(
+        "OPENAI_INSTRUCTIONS",
+        "chat_helper",
+        fallback="Ensure your response is under 2,000 characters and uses markdown compatible with Discord.",
+    )
+
+    context = await create_command_context(
+        interaction,
+        params={
+            "input_text": input_text,
+            "topic": f"{interaction.user.id}_{datetime.now().strftime("%Y%m%d%H")}",
+            "custom_instructions": custom_instructions,
+        },
+    )
+
+    save_chat = save_chat == "Yes"
+
+    await interaction.response.defer()
+
+    response = await new_response(context=context, prompt=input_text, save_chat=save_chat)
+
+    await interaction.followup.send(content=response.output_text)
 
     return await context.save()
 
