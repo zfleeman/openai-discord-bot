@@ -311,9 +311,7 @@ async def chat(
     interaction: Interaction,
     input_text: str,
     keep_chatting: Literal["Yes", "No"] = "No",
-    model: Literal[
-        "gpt-3.5-turbo", "gpt-4o-mini", "gpt-4.5-preview", "gpt-4o", "o1", "o1-pro", "o1-mini", "o3-mini"
-    ] = "gpt-4o-mini",
+    model: Literal["gpt-3.5-turbo", "gpt-4o-mini", "gpt-4.5-preview", "gpt-4o"] = "gpt-4o-mini",
     custom_instructions: Optional[str] = None,
 ) -> None:
 
@@ -332,6 +330,7 @@ async def chat(
             "topic": str(interaction.user.id),
             "custom_instructions": custom_instructions,
             "keep_chatting": keep_chatting == "Yes",
+            "model": model,
         },
     )
 
@@ -339,7 +338,11 @@ async def chat(
 
     response = await new_response(context=context, prompt=input_text, model=model)
 
-    await interaction.followup.send(content=response.output_text)
+    title = f"🤖 `{model}` Response{' (Continued)' if response.previous_response_id else ''}"
+
+    embed = Embed(title=title, description=response.output_text)
+
+    await interaction.followup.send(content=f"> {input_text}", embed=embed)
 
     return await context.save()
 
