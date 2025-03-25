@@ -7,13 +7,13 @@ import asyncio
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 from urllib.request import Request, urlopen
 
 import discord
 from discord import Embed, FFmpegOpusAudio, Intents, Interaction, app_commands
 
-from ai_helpers import content_path, generate_speech, get_config, get_openai_client, speak_and_spell
+from ai_helpers import content_path, generate_speech, get_config, get_openai_client, new_response, speak_and_spell
 from db_utils import create_command_context
 
 # Bot Client
@@ -296,6 +296,53 @@ async def vision(interaction: Interaction, attachment: discord.Attachment, visio
     await interaction.followup.send(embed=embed, file=discord_file)
 
     Path(attachment.filename).unlink()
+
+    return await context.save()
+
+
+@tree.command(name="chat", description="Have a conversation with an OpenAI Chat Model, like you would with ChatGPT.")
+@app_commands.describe(
+    input_text="The text of your question or statement that you wan the Chat Model to address.",
+    keep_chatting="Continue the conversation from your last prompt.",
+    model="The OpenAI Chat Model to use.",
+    custom_instructions="Help the Chat Model respond to your prompt the way YOU want it to.",
+)
+async def chat(
+    interaction: Interaction,
+    input_text: str,
+    keep_chatting: Literal["Yes", "No"] = "No",
+    model: Literal["gpt-3.5-turbo", "gpt-4o-mini", "gpt-4.5-preview", "gpt-4o"] = "gpt-4o-mini",
+    custom_instructions: Optional[str] = None,
+) -> None:
+
+    if not custom_instructions:
+        config = get_config()
+        custom_instructions = config.get(
+            "OPENAI_INSTRUCTIONS",
+            "chat_helper",
+            fallback="Ensure your response is under 2,000 characters and uses markdown compatible with Discord.",
+        )
+
+    context = await create_command_context(
+        interaction,
+        params={
+            "input_text": input_text,
+            "topic": str(interaction.user.id),
+            "custom_instructions": custom_instructions,
+            "keep_chatting": keep_chatting == "Yes",
+            "model": model,
+        },
+    )
+
+    await interaction.response.defer()
+
+    response = await new_response(context=context, prompt=input_text, model=model)
+
+    title = f"🤖 `{model}` Response{' (Continued)' if response.previous_response_id else ''}"
+
+    embed = Embed(title=title, description=response.output_text)
+
+    await interaction.followup.send(content=f"> {input_text}", embed=embed)
 
     return await context.save()
 

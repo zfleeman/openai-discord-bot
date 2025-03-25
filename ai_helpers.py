@@ -37,7 +37,6 @@ async def new_response(
     prompt: str,
     openai_client: Optional[AsyncOpenAI] = None,
     model: str = "gpt-4o-mini",
-    custom_instructions: str = "",
 ) -> Response:
     """
     Generate a new response with the OpenAI Response API and store its ID
@@ -49,7 +48,9 @@ async def new_response(
         model = "gpt-4o"
 
     # use command-specified custom instructions --> for future commands
-    instructions = custom_instructions or config.get("OPENAI_INSTRUCTIONS", context.params.get("topic"))
+    instructions = context.params.get("custom_instructions") or config.get(
+        "OPENAI_INSTRUCTIONS", context.params.get("topic")
+    )
 
     # limit the response output to conform to Discord character limit
     max_output_tokens = config.getint("OPENAI_GENERAL", "max_output_tokens", fallback=500)
