@@ -35,7 +35,6 @@ async def get_openai_client(guild_id: int) -> AsyncOpenAI:
 async def new_response(
     context: CommandContext,
     prompt: str,
-    save_chat: bool = False,
     openai_client: Optional[AsyncOpenAI] = None,
     model: str = "gpt-4o-mini",
 ) -> Response:
@@ -59,10 +58,7 @@ async def new_response(
     if not openai_client:
         openai_client = await get_openai_client(guild_id=context.guild_id)
 
-    if save_chat:
-        previous_response_id = await get_response_id(context=context)
-    else:
-        previous_response_id = None
+    previous_response_id = await get_response_id(context=context)
 
     response = await openai_client.responses.create(
         input=prompt,
@@ -72,8 +68,7 @@ async def new_response(
         max_output_tokens=max_output_tokens,
     )
 
-    if save_chat:
-        await update_chat(response_id=response.id, context=context)
+    await update_chat(response_id=response.id, context=context)
 
     return response
 

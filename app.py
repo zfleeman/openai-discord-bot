@@ -7,7 +7,7 @@ import asyncio
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 from urllib.request import Request, urlopen
 
 import discord
@@ -300,30 +300,44 @@ async def vision(interaction: Interaction, attachment: discord.Attachment, visio
     return await context.save()
 
 
-@tree.command(name="chat", description="Have a conversation with an OpenAI Text Model, like you would with ChatGPT.")
-# @app_commands.describe(input_text="", save_chat="")
-async def chat(interaction: Interaction, input_text: str, save_chat: Literal["Yes", "No"] = "No") -> None:
-    config = get_config()
-    custom_instructions = config.get(
-        "OPENAI_INSTRUCTIONS",
-        "chat_helper",
-        fallback="Ensure your response is under 2,000 characters and uses markdown compatible with Discord.",
-    )
+@tree.command(name="chat", description="Have a conversation with an OpenAI Chat Model, like you would with ChatGPT.")
+@app_commands.describe(
+    input_text="The text of your question or statement that you wan the Chat Model to address.",
+    keep_chatting="Continue the conversation from your last prompt.",
+    model="The OpenAI Chat Model to use.",
+    custom_instructions="Help the Chat Model respond to your prompt the way YOU want it to.",
+)
+async def chat(
+    interaction: Interaction,
+    input_text: str,
+    keep_chatting: Literal["Yes", "No"] = "No",
+    model: Literal[
+        "gpt-3.5-turbo", "gpt-4o-mini", "gpt-4.5-preview", "gpt-4o", "o1", "o1-pro", "o1-mini", "o3-mini"
+    ] = "gpt-4o-mini",
+    custom_instructions: Optional[str] = None,
+) -> None:
+
+    if not custom_instructions:
+        config = get_config()
+        custom_instructions = config.get(
+            "OPENAI_INSTRUCTIONS",
+            "chat_helper",
+            fallback="Ensure your response is under 2,000 characters and uses markdown compatible with Discord.",
+        )
 
     context = await create_command_context(
         interaction,
         params={
             "input_text": input_text,
-            "topic": f"{interaction.user.id}_{datetime.now().strftime("%Y%m%d%H")}",
+            "topic": str(interaction.user.id),
             "custom_instructions": custom_instructions,
+            "keep_chatting": keep_chatting == "Yes",
         },
     )
 
-    save_chat = save_chat == "Yes"
-
     await interaction.response.defer()
 
-    response = await new_response(context=context, prompt=input_text, save_chat=save_chat)
+    response = await new_response(context=context, prompt=input_text, model=model)
 
     await interaction.followup.send(content=response.output_text)
 

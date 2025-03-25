@@ -95,6 +95,10 @@ async def get_response_id(context: CommandContext) -> Union[str, None]:
         results = session.exec(statement=statement)
         response_record = results.one_or_none()
 
+        # special case for user chat completions
+        if not context.params.get("keep_chatting"):
+            return None
+
         return response_record.response_id if response_record else None
 
 
