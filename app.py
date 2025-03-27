@@ -156,7 +156,7 @@ async def say(
     context = await create_command_context(interaction, params={"text_to_speech": text_to_speech, "voice": voice})
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     file_name = f"{ts}.wav"
-    voice_client = discord.utils.get(bot.voice_clients, guild=interaction.guild_id)
+    voice_client = discord.utils.get(bot.voice_clients, guild=interaction.guild)
 
     await interaction.response.defer()
 
