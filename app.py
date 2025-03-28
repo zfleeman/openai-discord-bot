@@ -340,7 +340,7 @@ async def chat(
 
     title = f"🤖 `{model}` Response{' (Continued)' if response.previous_response_id else ''}"
 
-    embed = Embed(title=title, description=response.output_text)
+    embed = Embed(title=title, description=response.output_text, color=1752220)
 
     await interaction.followup.send(content=f"> {input_text}", embed=embed)
 
