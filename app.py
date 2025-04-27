@@ -311,7 +311,9 @@ async def chat(
     interaction: Interaction,
     input_text: str,
     keep_chatting: Literal["Yes", "No"] = "No",
-    model: Literal["gpt-3.5-turbo", "gpt-4o-mini", "gpt-4.5-preview", "gpt-4o"] = "gpt-4o-mini",
+    model: Literal[
+        "gpt-3.5-turbo", "gpt-4o-mini", "gpt-4.5-preview", "gpt-4o", "gpt-4.1", "gpt-4.1-mini"
+    ] = "gpt-4o-mini",
     custom_instructions: Optional[str] = None,
 ) -> None:
 
