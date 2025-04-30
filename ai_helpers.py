@@ -139,19 +139,23 @@ def check_model_limit(context: CommandContext, usage_tracker: dict) -> bool:
     usage_limits = {model: int(count) for model, count in config["OPENAI_MODEL_LIMITS"].items()}
     limit = usage_limits.get(model)
 
+    # do not limit models that don't have a specified limit in the config
     if not limit:
         return True
 
     today = datetime.now().strftime("%Y-%m-%d")
 
+    # create a blank dictionary for a guild if it isn't present in the map already
     if context.guild_id not in usage_tracker:
         usage_tracker[context.guild_id] = {}
 
+    # initialize a model usage dict for the limited-use model
     if model not in usage_tracker[context.guild_id]:
         usage_tracker[context.guild_id][model] = {"count": 0, "last_reset": today, "limit": limit}
 
     record = usage_tracker[context.guild_id][model]
 
+    # reset the usage on a new day
     if record["last_reset"] != today:
         record["count"] = 0
         record["last_reset"] = today
@@ -160,6 +164,7 @@ def check_model_limit(context: CommandContext, usage_tracker: dict) -> bool:
     if record["count"] >= limit:
         return False  # Limit reached
 
+    # increment the count
     record["count"] += 1
 
     return True
