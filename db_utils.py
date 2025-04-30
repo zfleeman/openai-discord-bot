@@ -60,16 +60,20 @@ class Chat(SQLModel, table=True):
     updated: datetime
 
 
-async def create_command_context(interaction: Interaction, **kwargs) -> CommandContext:
+async def create_command_context(interaction: Interaction, params: Optional[Dict[str, Any]] = None) -> CommandContext:
     """
     Helper function to create CommandContext entry.
     """
+
+    if not params:
+        params = {}
+
     context = CommandContext(
         guild_id=interaction.guild_id,
         user_id=interaction.user.id,
         user=interaction.user.name,
         command_name=interaction.command.name,
-        **kwargs,
+        params=params,
     )
 
     return context
