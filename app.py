@@ -4,6 +4,7 @@ A simple Discord Bot that utilizes the OpenAI API.
 """
 
 import asyncio
+import base64
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -12,8 +13,17 @@ from urllib.request import Request, urlopen
 
 import discord
 from discord import Embed, FFmpegOpusAudio, Intents, Interaction, app_commands
+from openai.types import Image
 
-from ai_helpers import content_path, generate_speech, get_config, get_openai_client, new_response, speak_and_spell
+from ai_helpers import (
+    check_model_limit,
+    content_path,
+    generate_speech,
+    get_config,
+    get_openai_client,
+    new_response,
+    speak_and_spell,
+)
 from db_utils import create_command_context
 
 # Bot Client
@@ -25,6 +35,7 @@ bot = discord.Client(intents=intents)
 tree = discord.app_commands.CommandTree(bot)
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.3"
+usage_tracker = {}  # blank dict created to store model usage for restricted models
 
 
 @tree.command(name="join", description="Join the voice channel that the user is currently in.")
@@ -181,45 +192,71 @@ async def say(
 
 @tree.command(name="image", description="Generate an image using a prompt and a specified model.")
 @app_commands.describe(
-    image_prompt="The prompt used for image generation.", image_model="The OpenAI image model to use."
+    image_prompt="The prompt used for image generation.",
+    image_model="The OpenAI image model to use.",
+    background="Allows to set transparency for the background of the generated image(s). gpt-image-1 only.",
 )
 async def image(
     interaction: Interaction,
     image_prompt: str,
-    image_model: Literal["dall-e-2", "dall-e-3", "dall-e-3-hd"] = "dall-e-3",
+    image_model: Literal["dall-e-2", "dall-e-3", "gpt-image-1"] = "dall-e-3",
+    background: Literal["transparent", "opaque", "auto"] = "auto",
 ) -> None:
-    context = await create_command_context(interaction, params={"image_prompt": image_prompt, "model": image_model})
-    image_quality = "standard"
-
-    if image_model == "dall-e-3-hd":
-        image_model, image_quality = "dall-e-3", "hd"
+    context = await create_command_context(
+        interaction, params={"prompt": image_prompt, "model": image_model, "background": background}
+    )
+    submission_params = context.params
 
     await interaction.response.defer()
 
     openai_client = await get_openai_client(interaction.guild_id)
 
-    # create image and get relevant information
-    image_response = await openai_client.images.generate(prompt=image_prompt, model=image_model, quality=image_quality)
-
-    image_object = image_response.data[0]
-
-    # create the output path
-    file_name = f"image_{image_response.created}.png"
-    path = content_path(context=context, file_name=file_name)
-
-    # download the image from OpenAI
-    with urlopen(image_object.url) as response:
-        image_data = response.read()
-        with open(path, "wb") as file:
-            file.write(image_data)
-
     # create our embed object
     embed = Embed(
         color=10181046,
-        title="Image Response",
-        description=f"User Input:\n```{image_prompt}```",
+        title=f"`{image_model}` Image Generation",
+        description=f"### User Input:\n> {image_prompt}",
     )
+
+    # gpt-image-1 has some special use cases that don't apply to dall-e-2/3
+    if image_model != "gpt-image-1":
+        _ = submission_params.pop("background")
+        submission_params["response_format"] = "b64_json"
+    else:
+
+        if not check_model_limit(context=context, usage_tracker=usage_tracker):
+
+            await interaction.followup.send(
+                content=f"`{context.params["model"]}` been used too much today. Try again tomorrow!"
+            )
+
+            return
+
+        submission_params["moderation"] = "low"
+
+        # set a footer showing usage information. Will not collide with dall-e-3 below because this is gpt-image-1 only
+        embed.set_footer(
+            text=(
+                f"Used {usage_tracker[interaction.guild_id][image_model]["count"]} "
+                f"out of {usage_tracker[interaction.guild_id][image_model]["limit"]} "
+                f"image generations with {image_model} today."
+            )
+        )
+
+    image_response = await openai_client.images.generate(**submission_params)
+    image_object: Image = image_response.data[0]
+
+    # save the generated image to a file
+    file_name = f"image_{image_response.created}.png"
+    path = content_path(context=context, file_name=file_name)
+    image_bytes = base64.b64decode(image_object.b64_json)
+
+    with open(path, "wb") as file:
+        file.write(image_bytes)
+
     embed.set_image(url=f"attachment://{file_name}")
+
+    # set the footer text if this is dall-e-3
     if image_object.revised_prompt:
         embed.set_footer(text=f"Revised Prompt:\n{image_object.revised_prompt}")
 
@@ -304,15 +341,15 @@ async def vision(interaction: Interaction, attachment: discord.Attachment, visio
 @app_commands.describe(
     input_text="The text of your question or statement that you wan the Chat Model to address.",
     keep_chatting="Continue the conversation from your last prompt.",
-    model="The OpenAI Chat Model to use.",
+    chat_model="The OpenAI Chat Model to use.",
     custom_instructions="Help the Chat Model respond to your prompt the way YOU want it to.",
 )
 async def chat(
     interaction: Interaction,
     input_text: str,
     keep_chatting: Literal["Yes", "No"] = "No",
-    model: Literal[
-        "gpt-3.5-turbo", "gpt-4o-mini", "gpt-4.5-preview", "gpt-4o", "gpt-4.1", "gpt-4.1-mini"
+    chat_model: Literal[
+        "gpt-3.5-turbo", "gpt-4o-mini", "gpt-4.5-preview", "gpt-4o", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano"
     ] = "gpt-4o-mini",
     custom_instructions: Optional[str] = None,
 ) -> None:
@@ -332,16 +369,14 @@ async def chat(
             "topic": str(interaction.user.id),
             "custom_instructions": custom_instructions,
             "keep_chatting": keep_chatting == "Yes",
-            "model": model,
+            "model": chat_model,
         },
     )
 
     await interaction.response.defer()
 
-    response = await new_response(context=context, prompt=input_text, model=model)
-
-    title = f"🤖 `{model}` Response{' (Continued)' if response.previous_response_id else ''}"
-
+    response = await new_response(context=context, prompt=input_text, model=chat_model)
+    title = f"🤖 `{chat_model}` Response{' (Continued)' if response.previous_response_id else ''}"
     embed = Embed(title=title, description=response.output_text, color=1752220)
 
     await interaction.followup.send(content=f"> {input_text}", embed=embed)

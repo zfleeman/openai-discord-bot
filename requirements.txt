@@ -1,4 +1,4 @@
-openai==1.76.0
+openai==1.76.2
 discord.py[voice]==2.5.2
 sqlmodel==0.0.24
 cryptography==44.0.2
