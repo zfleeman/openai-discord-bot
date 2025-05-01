@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 
 import discord
 from discord import Embed, FFmpegOpusAudio, Intents, Interaction, app_commands
+from openai import BadRequestError
 from openai.types import Image
 
 from ai_helpers import (
@@ -243,7 +244,14 @@ async def image(
             )
         )
 
-    image_response = await openai_client.images.generate(**submission_params)
+    try:
+        image_response = await openai_client.images.generate(**submission_params)
+    except BadRequestError:
+        await interaction.followup.send(
+            f"Your prompt:\n> {image_prompt}\nProbably violated OpenAI's content policies. Clean up your act."
+        )
+        return
+
     image_object: Image = image_response.data[0]
 
     # save the generated image to a file
@@ -339,14 +347,14 @@ async def vision(interaction: Interaction, attachment: discord.Attachment, visio
 
 @tree.command(name="chat", description="Have a conversation with an OpenAI Chat Model, like you would with ChatGPT.")
 @app_commands.describe(
-    input_text="The text of your question or statement that you wan the Chat Model to address.",
+    chat_prompt="The text of your question or statement that you wan the Chat Model to address.",
     keep_chatting="Continue the conversation from your last prompt.",
     chat_model="The OpenAI Chat Model to use.",
     custom_instructions="Help the Chat Model respond to your prompt the way YOU want it to.",
 )
 async def chat(
     interaction: Interaction,
-    input_text: str,
+    chat_prompt: str,
     keep_chatting: Literal["Yes", "No"] = "No",
     chat_model: Literal[
         "gpt-3.5-turbo", "gpt-4o-mini", "gpt-4.5-preview", "gpt-4o", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano"
@@ -365,7 +373,7 @@ async def chat(
     context = await create_command_context(
         interaction,
         params={
-            "input_text": input_text,
+            "chat_prompt": chat_prompt,
             "topic": str(interaction.user.id),
             "custom_instructions": custom_instructions,
             "keep_chatting": keep_chatting == "Yes",
@@ -375,11 +383,18 @@ async def chat(
 
     await interaction.response.defer()
 
-    response = await new_response(context=context, prompt=input_text, model=chat_model)
+    try:
+        response = await new_response(context=context, prompt=chat_prompt, model=chat_model)
+    except BadRequestError:
+        await interaction.followup.send(
+            f"Your prompt:\n> {chat_prompt}\nProbably violated OpenAI's content policies. Clean up your act."
+        )
+        return
+
     title = f"🤖 `{chat_model}` Response{' (Continued)' if response.previous_response_id else ''}"
     embed = Embed(title=title, description=response.output_text, color=1752220)
 
-    await interaction.followup.send(content=f"> {input_text}", embed=embed)
+    await interaction.followup.send(content=f"> {chat_prompt}", embed=embed)
 
     return await context.save()
 
